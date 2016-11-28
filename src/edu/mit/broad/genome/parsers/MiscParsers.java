@@ -14,6 +14,8 @@ import java.awt.*;
 import java.io.*;
 import java.util.*;
 
+import xapps.gsea.GseaWebResources;
+
 public class MiscParsers {
 
     /**
@@ -30,7 +32,7 @@ public class MiscParsers {
         }
 
         if (reqd && (txt == null || txt.length() == 0)) {
-            throw new ParserException("Null or empty for r: " + r + " c: " + c);
+            throw new ParserException("Null or empty for r: " + r + " c: " + c, GseaWebResources.MISC_PARSER_ERROR_CODE);
         }
 
         return txt;

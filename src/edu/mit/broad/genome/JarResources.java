@@ -207,6 +207,8 @@ public class JarResources {
     }
 
     public static Action createHelpAction(final StandardException se) {
+        // TODO: Maybe change this "broken help" stuff so that we simply have no Help link in those cases.
+        // The caller seems to be prepared if we simply return null here.
         String urle = getWikiErrorURL("" + se.getErrorCode());
         if (urle == null || urle.length() == 0) {
             urle = "Help broken for key: " + se.getErrorCode();

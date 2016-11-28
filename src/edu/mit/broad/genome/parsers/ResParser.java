@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.StringTokenizer;
 
+import xapps.gsea.GseaWebResources;
+
 /**
  * Parser for the MIT res file format. All the vagaries of the res file
  * format and the hacks etc to parse them are contained in this class.
@@ -49,64 +51,67 @@ public class ResParser extends AbstractParser {
     public void export(final PersistentObject pob, final File file) throws Exception {
 
         PrintWriter pw = startExport(pob, file);
-        Dataset ds = (Dataset) pob;
-        APMMatrix apm = null;
-
-        if (ds instanceof DefaultDataset) {
-            apm = ((DefaultDataset) ds).getAPMMatrix();
-        }
-
-        FeatureAnnot ann = ds.getAnnot().getFeatureAnnot();
-
-        // null is valid as not all datasets have anns
-        pw.print(Constants.DESCRIPTION + "\t" + Constants.NAME + "\t"); // @note reverse order compared to gct!!
-
-        for (int i = 0; i < ds.getNumCol(); i++) {
-            pw.print(ds.getColumnName(i) + '\t'); // extra empty tab for the CALL cell
-            if (i != ds.getNumCol() - 1) {
+        try {
+            Dataset ds = (Dataset) pob;
+            APMMatrix apm = null;
+    
+            if (ds instanceof DefaultDataset) {
+                apm = ((DefaultDataset) ds).getAPMMatrix();
+            }
+    
+            FeatureAnnot ann = ds.getAnnot().getFeatureAnnot();
+    
+            // null is valid as not all datasets have anns
+            pw.print(Constants.DESCRIPTION + "\t" + Constants.NAME + "\t"); // @note reverse order compared to gct!!
+    
+            for (int i = 0; i < ds.getNumCol(); i++) {
+                pw.print(ds.getColumnName(i) + '\t'); // extra empty tab for the CALL cell
+                if (i != ds.getNumCol() - 1) {
+                    pw.print('\t');
+                }
+            }
+    
+            pw.println();
+            pw.println("");    // omit the scaling factor line
+            pw.println(ds.getNumRow());
+    
+            for (int r = 0; r < ds.getNumRow(); r++) {
+                String featName = ds.getRowName(r);
+                // Give preference to Native desc if it exists
+                // If not, use the symbol desc
+                String featDesc = Constants.NA;
+                if (ann != null) {
+                    if (ann.hasNativeDescriptions()) {
+                        featDesc = ann.getNativeDesc(featName);
+                    } else {
+                        featDesc = ann.getGeneSymbol(featName) + ":" + ann.getGeneTitle(featName);
+                    }
+                }
+    
+                pw.print(featDesc);
                 pw.print('\t');
+                pw.print(featName);
+                pw.print('\t');
+    
+                Vector row = ds.getRow(r);
+                StringBuffer buf = new StringBuffer();
+                for (int c = 0; c < row.getSize(); c++) {
+                    if (apm == null) {
+                        buf.append(row.getElement(c)).append('\t').append('P');// @note fill in dummy CALL values
+                    } else {
+                        buf.append(row.getElement(c)).append('\t').append(apm.getElement_char(r, c));
+                    }
+                    if (c != row.getSize()) {
+                        buf.append('\t');
+                    }
+                }
+    
+                pw.println(buf.toString());
             }
         }
-
-        pw.println();
-        pw.println("");    // omit the scaling factor line
-        pw.println(ds.getNumRow());
-
-        for (int r = 0; r < ds.getNumRow(); r++) {
-            String featName = ds.getRowName(r);
-            // Give preference to Native desc if it exists
-            // If not, use the symbol desc
-            String featDesc = Constants.NA;
-            if (ann != null) {
-                if (ann.hasNativeDescriptions()) {
-                    featDesc = ann.getNativeDesc(featName);
-                } else {
-                    featDesc = ann.getGeneSymbol(featName) + ":" + ann.getGeneTitle(featName);
-                }
-            }
-
-            pw.print(featDesc);
-            pw.print('\t');
-            pw.print(featName);
-            pw.print('\t');
-
-            Vector row = ds.getRow(r);
-            StringBuffer buf = new StringBuffer();
-            for (int c = 0; c < row.getSize(); c++) {
-                if (apm == null) {
-                    buf.append(row.getElement(c)).append('\t').append('P');// @note fill in dummy CALL values
-                } else {
-                    buf.append(row.getElement(c)).append('\t').append(apm.getElement_char(r, c));
-                }
-                if (c != row.getSize()) {
-                    buf.append('\t');
-                }
-            }
-
-            pw.println(buf.toString());
+        finally {
+            pw.close();
         }
-
-        pw.close();
         doneExport();
     }    // End export
 
@@ -140,6 +145,8 @@ public class ResParser extends AbstractParser {
      * @done Add AP call parsing and include in the dara structure
      * <br>-> there is one AP call per float and these get fed into a parallel BooleanMatrix
      */
+    // TODO: evaluate whether we need that BooleanMatrix.
+    // We don't use the AP calls (AFAICT) so why bother?
     public List parse(String sourcepath, InputStream is) throws Exception {
 
         startImport(sourcepath);
@@ -147,178 +154,200 @@ public class ResParser extends AbstractParser {
         StringBuffer comment = new StringBuffer();
 
         BufferedReader bin = new BufferedReader(new InputStreamReader(is));
-        //bin = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
-        //bin = new BufferedReader(new InputStreamReader(pis));
-
-        // 1st header line: Description <tab> Accession <tab> <sample 1> <tab> <tab> <sample 2> ...
-        // (column names)
-        // NOTE: if line ends in CR-LF, then we have actually read currLine.length() + 2 bytes...
-        String currLine = bin.readLine();
-
-        while (currLine.startsWith("#")) {
-            comment.append(currLine).append('\n');
-            currLine = bin.readLine();
-        }
-
-        currLineNum++;
-
-        ArrayList colArr = new ArrayList();
-        char theDelim = '\t';
-        char[] tmpChar = new char[1];
-
-        if (currLine.length() > 0) {
-            theDelim = ParseUtils.getDelim(currLine);
-            tmpChar[0] = theDelim;
-
-            StringTokenizer st = new StringTokenizer(currLine, new String(tmpChar));
-
-            if (st.hasMoreTokens()) {
-                st.nextToken();                                    // Description
-            }
-
-            if (st.hasMoreTokens()) {
-                st.nextToken();                                    // Accession
-            }
-
-            while (st.hasMoreTokens()) {
-
-                // System.out.println(st.nextToken());
-                colArr.add(st.nextToken());
-            }
-        }
-
-        // 2nd header line, chip scaling factors or blank
-        // <tab> CH1999021515AA <tab> <tab> CH1999021306AA/scale factor=0.9564 <tab> <tab>
-        bin.readLine();
-        currLineNum++;
-
-        // 3rd header line optional, number of rows or blank or first data line
-        currLine = bin.readLine();
-
-        currLineNum++;
-
-        int numRows = 0,
-                numCols = colArr.size();
-
-        // Try parsing to see if there is a numRows fields
-        //boolean haveNumRows;
         try {
-            // parseInt does not work if there is extra white-space
-            String intStr = currLine.trim();
-
-            numRows = Integer.parseInt(intStr);
-            currLine = bin.readLine();
-
-            currLineNum++;
-
-            //haveNumRows = true;
-        } catch (Exception e) {
-            //haveNumRows = false;
-        }
-
-        log.info("Found meg data as numRows:" + numRows + " numCols:" + numCols);
-
-        // Now that dataset has been initialized, assign column names
-        List colNames = new ArrayList(numCols);
-
-        for (int i = 0; i < numCols; ++i) {
-            colNames.add(colArr.get(i));
-        }
-
-        // At this point, currLine should contain the first data line
-        // data line: <row desc> <tab> <row name> <tab> <ex1> <tab> <call1> <tab> <ex2> <tab> <call2>
-        Matrix matrix = new Matrix(numRows, numCols);
-        APMMatrix apmMatrix = new APMMatrix(numRows, numCols);
-        List rowNames = new ArrayList(numRows);
-        List rowDescs = new ArrayList(numRows);
-        int dataRowInd = 0;
-
-        while (currLine != null) {
-            //currLine = currLine.trim();
-            if (currLine.length() == 0) {
+    
+            // 1st header line: Description <tab> Accession <tab> <sample 1> <tab> <tab> <sample 2> ...
+            // (column names)
+            // NOTE: if line ends in CR-LF, then we have actually read currLine.length() + 2 bytes...
+            String currLine = bin.readLine();
+    
+            while (currLine.startsWith("#")) {
+                comment.append(currLine).append('\n');
                 currLine = bin.readLine();
-                continue;
             }
-
-            // substring returns a String that references the original String's buffer
-            // Upshot is that that the buffer (in our case a whole line) never gets freed
-            // Solution is to explicitly create a string from the substring
-            int ind1 = currLine.indexOf(theDelim);
-
-            //System.out.println(">>>PPP " + currLine);
-            checkIndex(ind1, currLineNum);
-
-            String desc = currLine.substring(0, ind1);
-            int ind2 = currLine.indexOf(theDelim, ind1 + 1);
-            checkIndex(ind2, currLineNum);
-            //System.out.println(">>>TTT " + currLine);
-            String name = currLine.substring(ind1 + 1, ind2);
-            rowNames.add(name);
-
-            // add to the Annotation
-            // for each res file float entry, theres one name and one desc
-            //ann.addFeature(name, new String[]{desc});
-            float[] theFloats = new float[numCols];
-            float[] theCalls = new float[numCols];
-
-            ind1 = ind2;
-
-            //System.out.println(">>> " + currLine);
-            for (int i = 0; i < numCols; ++i) {
-                ind2 = currLine.indexOf(theDelim, ind1 + 1);
-
-                checkIndex(ind2, currLineNum);
-
-                //System.out.println(">>>RRR " + currLine);
-                // get expression level
-                String floatStr = currLine.substring(ind1 + 1, ind2);
-
-                //if (floatStr.length() < 1)
-                //theFloats[i] = 0;
-                //else
-                theFloats[i] = Float.valueOf(floatStr).floatValue();
-
-                // call (absent, present, etc.) column
-                //int apindx = currLine.indexOf(theDelim, ind1 + 1 + 1);
-                String apStr = currLine.substring(ind1 + 1 + floatStr.length() + 1,
-                        ind1 + 1 + floatStr.length() + 1 + 1);
-
-                theCalls[i] = APMMatrix.valueOf(apStr);
-
-                //System.out.println(">> " + apStr);
-                ind1 = currLine.indexOf(theDelim, ind2 + 1);
-            }
-
-            matrix.setRow(dataRowInd, theFloats);
-            apmMatrix.setRow(dataRowInd, theCalls);
-            rowDescs.add(desc);
-
-            dataRowInd++;
-
-            currLine = bin.readLine();
-
+    
             currLineNum++;
+    
+            ArrayList colArr = new ArrayList();
+            char theDelim = '\t';
+            char[] tmpChar = new char[1];
+    
+            if (currLine.length() > 0) {
+                theDelim = ParseUtils.getDelim(currLine);
+                tmpChar[0] = theDelim;
+    
+                StringTokenizer st = new StringTokenizer(currLine, new String(tmpChar));
+    
+                if (st.hasMoreTokens()) {
+                    st.nextToken();                                    // Description
+                }
+    
+                if (st.hasMoreTokens()) {
+                    st.nextToken();                                    // Accession
+                }
+    
+                while (st.hasMoreTokens()) {
+    
+                    // System.out.println(st.nextToken());
+                    colArr.add(st.nextToken());
+                }
+            }
+    
+            // 2nd header line, chip scaling factors or blank
+            // <tab> CH1999021515AA <tab> <tab> CH1999021306AA/scale factor=0.9564 <tab> <tab>
+            bin.readLine();
+            currLineNum++;
+    
+            // 3rd header line optional, number of rows or blank or first data line
+            currLine = bin.readLine();
+    
+            currLineNum++;
+    
+            int numRows = 0,
+                    numCols = colArr.size();
+    
+            // Try parsing to see if there is a numRows fields
+            //boolean haveNumRows;
+            try {
+                // parseInt does not work if there is extra white-space
+                String intStr = currLine.trim();
+                numRows = Integer.parseInt(intStr);
+
+                currLine = bin.readLine();
+    
+                currLineNum++;
+    
+                //haveNumRows = true;
+            } catch (Exception e) {
+                //haveNumRows = false;
+                // TODO: reevaluate numRows parsing.
+                // Note: leaving this alone for legacy reasons.  RES requires the row count, but this parser
+                // is more lenient and skips it.
+                // This is probably incorrect, considering the logic below which assumes numRows is correctly
+                // set to size several data structures.
+            }
+    
+            log.info("Found meg data as numRows:" + numRows + " numCols:" + numCols);
+    
+            // Now that dataset has been initialized, assign column names
+            List colNames = new ArrayList(numCols);
+    
+            for (int i = 0; i < numCols; ++i) {
+                colNames.add(colArr.get(i));
+            }
+    
+            // At this point, currLine should contain the first data line
+            // data line: <row desc> <tab> <row name> <tab> <ex1> <tab> <call1> <tab> <ex2> <tab> <call2>
+            Matrix matrix = new Matrix(numRows, numCols);
+            APMMatrix apmMatrix = new APMMatrix(numRows, numCols);
+            List rowNames = new ArrayList(numRows);
+            List rowDescs = new ArrayList(numRows);
+            int dataRowInd = 0;
+    
+            while (currLine != null) {
+                //currLine = currLine.trim();
+                if (currLine.length() == 0) {
+                    currLine = bin.readLine();
+                    continue;
+                }
+    
+                // substring returns a String that references the original String's buffer
+                // Upshot is that that the buffer (in our case a whole line) never gets freed
+                // Solution is to explicitly create a string from the substring
+                int ind1 = currLine.indexOf(theDelim);
+    
+                //System.out.println(">>>PPP " + currLine);
+                checkIndex(ind1, currLineNum);
+    
+                String desc = currLine.substring(0, ind1);
+                int ind2 = currLine.indexOf(theDelim, ind1 + 1);
+                checkIndex(ind2, currLineNum);
+                //System.out.println(">>>TTT " + currLine);
+                String name = currLine.substring(ind1 + 1, ind2);
+                rowNames.add(name);
+    
+                // add to the Annotation
+                // for each res file float entry, theres one name and one desc
+                //ann.addFeature(name, new String[]{desc});
+                float[] theFloats = new float[numCols];
+                float[] theCalls = new float[numCols];
+    
+                ind1 = ind2;
+    
+                //System.out.println(">>> " + currLine);
+                for (int i = 0; i < numCols; ++i) {
+                    ind2 = currLine.indexOf(theDelim, ind1 + 1);
+    
+                    checkIndex(ind2, currLineNum);
+    
+                    //System.out.println(">>>RRR " + currLine);
+                    // get expression level
+                    String floatStr = currLine.substring(ind1 + 1, ind2);
+    
+                    //if (floatStr.length() < 1)
+                    //theFloats[i] = 0;
+                    //else
+                    try {
+                        theFloats[i] = Float.valueOf(floatStr).floatValue();
+                    }
+                    catch (NumberFormatException nfe) {
+                        throw new ParserException("Bad RES Format: could not parse field '"
+                                + floatStr + "' in expression column " + (i+1) + " as a float value.", currLineNum, nfe,
+                                GseaWebResources.RES_PARSER_ERROR_CODE);
+                    }
+
+                    // call (absent, present, etc.) column
+                    //int apindx = currLine.indexOf(theDelim, ind1 + 1 + 1);
+                    String apStr = currLine.substring(ind1 + 1 + floatStr.length() + 1,
+                            ind1 + 1 + floatStr.length() + 1 + 1);
+    
+                    try {
+                        theCalls[i] = APMMatrix.valueOf(apStr);
+                    }
+                    catch (IllegalArgumentException iae) {
+                        throw new ParserException("Bad RES Format: could not parse field '"
+                                + apStr + "' in callcolumn " + (i+1) + " as an APM value.", currLineNum, iae,
+                                GseaWebResources.RES_PARSER_ERROR_CODE);
+                    }
+
+                    //System.out.println(">> " + apStr);
+                    ind1 = currLine.indexOf(theDelim, ind2 + 1);
+                }
+    
+                matrix.setRow(dataRowInd, theFloats);
+                apmMatrix.setRow(dataRowInd, theCalls);
+                rowDescs.add(desc);
+    
+                dataRowInd++;
+    
+                currLine = bin.readLine();
+    
+                currLineNum++;
+            }
+    
+            doneImport();
+    
+            FeatureAnnot fann = new FeatureAnnotImpl(sourcepath, rowNames, rowDescs);
+            fann.addComment(fComment.toString());
+    
+            final SampleAnnot sann = new SampleAnnotImpl(sourcepath, colNames, null);
+    
+            final Dataset ds = new DefaultDataset(sourcepath, matrix, rowNames, colNames, true, new AnnotImpl(fann, sann), apmMatrix);
+            ds.addComment(fComment.toString());
+    
+            System.out.println(">>>>> DONE PARSING: " + apmMatrix.getQuickInfo());
+    
+            return unmodlist(new PersistentObject[]{ds});
         }
-
-        doneImport();
-
-        FeatureAnnot fann = new FeatureAnnotImpl(sourcepath, rowNames, rowDescs);
-        fann.addComment(fComment.toString());
-
-        final SampleAnnot sann = new SampleAnnotImpl(sourcepath, colNames, null);
-
-        final Dataset ds = new DefaultDataset(sourcepath, matrix, rowNames, colNames, true, new AnnotImpl(fann, sann), apmMatrix);
-        ds.addComment(fComment.toString());
-
-        System.out.println(">>>>> DONE PARSING: " + apmMatrix.getQuickInfo());
-
-        return unmodlist(new PersistentObject[]{ds});
+        finally {
+            bin.close();
+        }
     } // End of method parse
 
     private void checkIndex(int ind, int lineNum) throws ParserException {
 
         if (ind < 0) {
-            throw new ParserException("Invalid line index=" + ind + " . Expecting ind >=0 " + " on line: " + lineNum);
+            throw new ParserException("Invalid line index=" + ind + " . Expecting ind >=0 ", lineNum, GseaWebResources.RES_PARSER_ERROR_CODE);
         }
     }
 

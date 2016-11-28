@@ -7,11 +7,14 @@ import edu.mit.broad.genome.Constants;
 import edu.mit.broad.genome.NamingConventions;
 import edu.mit.broad.genome.math.Matrix;
 import edu.mit.broad.genome.objects.*;
+import edu.mit.broad.genome.utils.ParseException;
 import edu.mit.broad.vdb.sampledb.SampleAnnot;
 
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+
+import xapps.gsea.GseaWebResources;
 
 /**
  * Parses a gct formatted dataset -- similar to dataframe except that formatted
@@ -52,57 +55,59 @@ public class GctParser extends AbstractParser {
     }
 
     private void _export(final PersistentObject pob, final PrintWriter pw) throws Exception {
-
-        final Dataset ds = (Dataset) pob;
-        FeatureAnnot ann = null;
-        if (ds.getAnnot() != null) {
-            ann = ds.getAnnot().getFeatureAnnot();
-        }
-
-        //log.debug("Annotation is: " + ann);
-
-        pw.println("#1.2"); // not sure what the # means, but give the people what they want
-        pw.println(ds.getNumRow() + "\t" + ds.getNumCol());
-        pw.print(Constants.NAME + "\t" + Constants.DESCRIPTION + "\t");
-
-        for (int i = 0; i < ds.getNumCol(); i++) {
-            pw.print(ds.getColumnName(i));
-            if (i != ds.getNumCol() - 1) {
-                pw.print('\t');
+        try {
+            final Dataset ds = (Dataset) pob;
+            FeatureAnnot ann = null;
+            if (ds.getAnnot() != null) {
+                ann = ds.getAnnot().getFeatureAnnot();
             }
-        }
-
-        pw.println();
-
-        // Give preference to Native desc if it exists
-        // If not, use the symbol desc
-        for (int r = 0; r < ds.getNumRow(); r++) {
-            StringBuffer buf = new StringBuffer();
-            String rowName = ds.getRowName(r);
-            buf.append(rowName).append('\t');
-            String desc = Constants.NA;
-            if (ann != null) {
-                if (ann.hasNativeDescriptions()) {
-                    desc = ann.getNativeDesc(rowName);
-                } else {
-                    String symbol = ann.getGeneSymbol(rowName);
-                    if (symbol != null) {
-                        desc = symbol + ":" + ann.getGeneTitle(rowName);
-                    }
+    
+            //log.debug("Annotation is: " + ann);
+    
+            pw.println("#1.2"); // not sure what the # means, but give the people what they want
+            pw.println(ds.getNumRow() + "\t" + ds.getNumCol());
+            pw.print(Constants.NAME + "\t" + Constants.DESCRIPTION + "\t");
+    
+            for (int i = 0; i < ds.getNumCol(); i++) {
+                pw.print(ds.getColumnName(i));
+                if (i != ds.getNumCol() - 1) {
+                    pw.print('\t');
                 }
             }
-
-            if (desc == null) {
-                desc = Constants.NA;
+    
+            pw.println();
+    
+            // Give preference to Native desc if it exists
+            // If not, use the symbol desc
+            for (int r = 0; r < ds.getNumRow(); r++) {
+                StringBuffer buf = new StringBuffer();
+                String rowName = ds.getRowName(r);
+                buf.append(rowName).append('\t');
+                String desc = Constants.NA;
+                if (ann != null) {
+                    if (ann.hasNativeDescriptions()) {
+                        desc = ann.getNativeDesc(rowName);
+                    } else {
+                        String symbol = ann.getGeneSymbol(rowName);
+                        if (symbol != null) {
+                            desc = symbol + ":" + ann.getGeneTitle(rowName);
+                        }
+                    }
+                }
+    
+                if (desc == null) {
+                    desc = Constants.NA;
+                }
+    
+                buf.append(desc).append('\t');
+                buf.append(ds.getRow(r).toString('\t'));
+                pw.println(buf.toString());
             }
-
-            buf.append(desc).append('\t');
-            buf.append(ds.getRow(r).toString('\t'));
-            pw.println(buf.toString());
         }
-
-        pw.close();
-
+        finally {
+            pw.close();
+        }
+        
         doneExport();
     }    // End export
 
@@ -113,100 +118,107 @@ public class GctParser extends AbstractParser {
      */
     public List parse(String sourcepath, InputStream is) throws Exception {
         startImport(sourcepath);
+        sourcepath = NamingConventions.removeExtension(sourcepath);
 
         BufferedReader bin = new BufferedReader(new InputStreamReader(is));
-        return _parse(sourcepath, bin, true);
-
+        try {
+            // TODO: fix this header handling code.  GCT does not allow comment lines, and the header has a specific form.
+            Line currLine = nextLine(bin, 0);
+            String currContent = currLine.getContent();
+    
+            // 1st  non-empty, non-comment line is numrows and numcols
+            int[] nstuff = null;
+            try {
+                nstuff = ParseUtils.string2ints(currContent, " \t");
+            
+                int rowColHeaderLineNumber = currLine.getLineNumber();
+                if (nstuff.length != 2) {
+                    throw new ParserException("Bad GCT format: expecting two integer values for row/column info, found "
+                            + nstuff.length + " value(s).", rowColHeaderLineNumber, GseaWebResources.GCT_PARSER_ERROR_CODE);
+                }
+        
+                int nrows = nstuff[0];
+                int ncols = nstuff[1];
+        
+                // First 2 fields name and desc are to be ignored
+                // Note: leaving it this way for legacy purposes.  The GCT format requires "NAME\tDescription",
+                // but this parser is more lenient and ignores the first two values so long as they are present.
+                currLine = nextLine(bin, currLine.getLineNumber());
+                currContent = currLine.getContent();
+                List colnames = ParseUtils.string2stringsList(currContent, "\t"); // colnames can have spaces
+                colnames.remove(0);                                 // first elem is always nonsense
+                colnames.remove(0);
+                if (colnames.size() != ncols) {
+                    throw new ParserException("Bad GCT format: expected " + ncols
+                            + " columns based on header line specification but found " + colnames.size(),
+                            rowColHeaderLineNumber, GseaWebResources.GCT_PARSER_ERROR_CODE);
+                }
+        
+                // At this point, currContent should be just before the first data line
+                // data line: <row name> <tab> <ex1> <tab> <ex2> <tab>
+                List lines = new ArrayList();
+    
+                currLine = nextLineTrimless(bin, currLine.getLineNumber());
+                int firstDataLineNumber = currLine.getLineNumber();
+                currContent = currLine.getContent();
+        
+                // save all rows so that we can determine how many rows exist
+                // TODO: Can possibly restructure.  We can process as we go and just signal an error if nrows is exceeded.
+                while (currContent != null) {
+                    lines.add(currContent);
+                    currLine = nextLineTrimless(bin, currLine.getLineNumber());
+                    currContent = currLine.getContent(); /// imp for mv datasets -> last col(s) can be a tab
+                }
+        
+                if (lines.size() != nrows) {
+                    throw new ParserException("Bad GCT format: expected " + nrows
+                            + " rows based on header line specification but found " + lines.size(),
+                            rowColHeaderLineNumber, GseaWebResources.GCT_PARSER_ERROR_CODE);
+                }
+    
+                return _parseHasDesc(sourcepath, lines, colnames, firstDataLineNumber);
+            }
+            catch (ParseException pe) {
+                throw new ParserException(pe.getMessage(), currLine.getLineNumber(), pe,
+                        GseaWebResources.GCT_PARSER_ERROR_CODE);
+            }
+        }
+        finally {
+            bin.close();
+        }
     }
 
-    /// does the real parsing
-    // expects the bin to be untouched
-    private List _parse(String objName, BufferedReader bin, boolean nameBeforeDesc) throws Exception {
-        objName = NamingConventions.removeExtension(objName);
-        String currLine = nextLine(bin);
-
-        // 1st  non-empty, non-comment line is numrows and numcols
-        int[] nstuff = ParseUtils.string2ints(currLine, " \t");
-        if (nstuff.length != 2) {
-            throw new ParserException("Gct file with bad row/col info on line: " + currLine);
-        }
-
-        int nrows = nstuff[0];
-        int ncols = nstuff[1];
-
-        // First 2 fields name and desc are to be ignored
-        currLine = nextLine(bin);
-        //System.out.println(currLine);
-        List colnames = ParseUtils.string2stringsList(currLine, "\t"); // colnames can have spaces
-
-        colnames.remove(0);                                 // first elem is always nonsense
-        colnames.remove(0);
-
-        if (colnames.size() != ncols) {
-            throw new ParserException("Bad gct format -- expected ncols from specification on header line: " + ncols + " but found in data: " + colnames.size());
-        }
-
-        // At this point, currLine should contain the first data line
-        // data line: <row name> <tab> <ex1> <tab> <ex2> <tab>
-        List lines = new ArrayList();
-
-        currLine = nextLineTrimless(bin);
-
-        // save all rows so that we can determine how many rows exist
-        while (currLine != null) {
-            lines.add(currLine);
-            //currLine = nextLine(bin);
-            currLine = nextLineTrimless(bin); /// imp for mv datasets -> last col(s) can be a tab
-        }
-
-        if (lines.size() != nrows) {
-            throw new ParserException("Bad gct format -- exepcted nrows from specification on header line: " + nrows + " but found in data: " + lines.size());
-        }
-
-        bin.close();
-
-        return _parseHasDesc(objName, lines, colnames, nameBeforeDesc);
-    }
-
-    private List _parseHasDesc(String objName, List lines, List colNames, boolean nameBeforeDesc) throws Exception {
+    private List _parseHasDesc(String objName, List lines, List colNames, int firstDataLineNumber) throws Exception {
         objName = NamingConventions.removeExtension(objName);
         Matrix matrix = new Matrix(lines.size(), colNames.size());
         List rowNames = new ArrayList();
         List rowDescs = new ArrayList();
 
-        for (int i = 0; i < lines.size(); i++) {
+        for (int i = 0, lineNumber = firstDataLineNumber; i < lines.size(); i++, lineNumber++) {
             String currLine = (String) lines.get(i);
             List fields = string2stringsV2(currLine, colNames.size() + 2); // spaces allowed in name & desc field so DONT tokenize them
 
             if (fields.size() != colNames.size() + 1 + 1) {
-                //System.out.println(">> " + fields);
-                throw new ParserException("Bad format - expect ncols: " + (colNames.size() + 1 + 1)
-                        + " but found: " + fields.size() + " on line >"
-                        + currLine + "<\nIf this dataset has missing values, use ImputeDataset to fill these in before importing as a Dataset");
+                throw new ParserException("Bad GCT format: expected " + (colNames.size() + 1 + 1)
+                        + " columns based on header line specification but found " + fields.size()
+                        + ".\nIf this dataset has missing values, use ImputeDataset to fill these in before importing as a Dataset",
+                        lineNumber, GseaWebResources.GCT_PARSER_ERROR_CODE);
             }
 
             String rowname = fields.get(0).toString().trim();
             if (rowname.length() == 0) {
-                throw new ParserException("Bad rowname - cant be empty at: " + i + " >" + currLine);
+                throw new ParserException("Bad GCT format: row name is empty ", lineNumber, GseaWebResources.GCT_PARSER_ERROR_CODE);
             }
 
             String desc = fields.get(1).toString().trim();
             if (desc.length() == 0) {
                 desc = Constants.NA; // dont exception out - genecluster like behavior
-                //throw new ParserException("Bad rowdescname - cant be empty at: " + i + " >" + currLine);
-            }
-
-            if (nameBeforeDesc) {
-                // the standard way, do nothing
-            } else { // the flipped one
-                String tmp = rowname;
-                rowname = desc;
-                desc = tmp;
             }
 
             rowDescs.add(desc);
             rowNames.add(rowname);
 
+            // TODO: should this be a utility method somewhere?
             for (int f = 2; f < fields.size(); f++) {
                 String s = fields.get(f).toString().trim();
                 float val;
@@ -215,10 +227,11 @@ public class GctParser extends AbstractParser {
                 } else {
                     try {
                         val = Float.parseFloat(s);
-                    } catch (Exception e) {
-                        System.out.println(">" + s + "<");
-                        //val = Float.NaN;
-                        throw e;
+                    }
+                    catch (NumberFormatException nfe) {
+                        throw new ParserException("Bad GCT Format: could not parse field '"
+                                + s + "' in column " + (f+1) + " as a float value.", lineNumber, nfe,
+                                GseaWebResources.GCT_PARSER_ERROR_CODE);
                     }
                 }
                 matrix.setElement(i, f - 2, val);

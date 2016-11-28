@@ -51,6 +51,7 @@ public class ImageUtil {
         } catch (Throwable t) {
             String errMsg = "An error occurred while saving the image '" + outputFile.getName() + "'";
             klog.error(errMsg, t);
+            // TODO: Adjust this to be an Exception with no online help.
             throw new StandardException(errMsg, t, 9002);
         }
     }

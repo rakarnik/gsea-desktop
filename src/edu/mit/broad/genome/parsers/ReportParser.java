@@ -5,6 +5,7 @@ package edu.mit.broad.genome.parsers;
 
 import edu.mit.broad.genome.objects.PersistentObject;
 import edu.mit.broad.genome.reports.api.Report;
+import xapps.gsea.GseaWebResources;
 import xtools.api.DefaultReport;
 
 import java.io.*;
@@ -41,31 +42,33 @@ public class ReportParser extends AbstractParser {
     public void export(PersistentObject pob, File file) throws Exception {
 
         PrintWriter pw = startExport(pob, file);
-
-        Report rep = (Report) pob;
-
-        StringBuffer buf = new StringBuffer();
-        buf.append(Report.PRODUCER_CLASS_ENTRY).append('\t').append(rep.getProducer().getName()).append('\n');
-        buf.append(Report.TIMESTAMP_ENTRY).append('\t').append(rep.getTimestamp()).append('\n');
-
-        Properties prp = rep.getParametersUsed();
-        Enumeration en = prp.keys();
-        while (en.hasMoreElements()) {
-            String key = en.nextElement().toString();
-            String val = prp.getProperty(key);
-            buf.append(Report.PARAM_ENTRY).append('\t').append(key).append('\t').append(val).append('\n');
+        try {
+            Report rep = (Report) pob;
+    
+            StringBuffer buf = new StringBuffer();
+            buf.append(Report.PRODUCER_CLASS_ENTRY).append('\t').append(rep.getProducer().getName()).append('\n');
+            buf.append(Report.TIMESTAMP_ENTRY).append('\t').append(rep.getTimestamp()).append('\n');
+    
+            Properties prp = rep.getParametersUsed();
+            Enumeration en = prp.keys();
+            while (en.hasMoreElements()) {
+                String key = en.nextElement().toString();
+                String val = prp.getProperty(key);
+                buf.append(Report.PARAM_ENTRY).append('\t').append(key).append('\t').append(val).append('\n');
+            }
+    
+            buf.append('\n');
+    
+            File[] files = rep.getFilesProduced();
+            for (int f = 0; f < files.length; f++) {
+                buf.append(Report.FILE_ENTRY).append('\t').append(files[f].getPath()).append('\n');
+            }
+    
+            pw.print(buf.toString());
         }
-
-        buf.append('\n');
-
-        File[] files = rep.getFilesProduced();
-        for (int f = 0; f < files.length; f++) {
-            buf.append(Report.FILE_ENTRY).append('\t').append(files[f].getPath()).append('\n');
+        finally {
+            pw.close();
         }
-
-        pw.print(buf.toString());
-
-        pw.close();
         doneExport();
 
     }    // End export
@@ -79,60 +82,75 @@ public class ReportParser extends AbstractParser {
     public List parse(final String sourcepath, final InputStream is) throws Exception {
 
         BufferedReader bin = new BufferedReader(new InputStreamReader(is));
-        String currLine = nextLine(bin);
-
-        List filesList = new ArrayList();
-        Properties params = new Properties();
-        Class cl = null;
-        long ts = 0; // beginning of time if no ts info available
-
-        while (currLine != null) {
-
-            String[] fields = ParseUtils.string2strings(currLine, "\t", false); // no spaces -- valid for file names!
-
-            if ((fields.length != 2) && (fields.length != 3)) {
-                throw new ParserException("Bad Report format -- expect 2 or 3, found: " + fields.length + " line: " + currLine);
-            }
-
-            if (fields[0].equalsIgnoreCase(Report.PRODUCER_CLASS_ENTRY)) {
-                if (fields.length != 2) {
-                    throw new ParserException(">2 fields for " + Report.PRODUCER_CLASS_ENTRY + " line: " + currLine);
+        try {
+            Line currLine = nextLine(bin, 0);
+            String currContent = currLine.getContent();
+    
+            List filesList = new ArrayList();
+            Properties params = new Properties();
+            Class cl = null;
+            long ts = 0; // beginning of time if no ts info available
+    
+            while (currContent != null) {
+    
+                String[] fields = ParseUtils.string2strings(currContent, "\t", false); // no spaces -- valid for file names!
+    
+                if ((fields.length != 2) && (fields.length != 3)) {
+                    throw new ParserException("Bad RPT format: expected 2 or 3 fields, found: " + fields.length, currLine.getLineNumber(),
+                            GseaWebResources.RPT_PARSER_ERROR_CODE);
                 }
-
-                cl = Class.forName(fields[1]);
-            }
-
-            if (fields[0].equalsIgnoreCase(Report.TIMESTAMP_ENTRY)) {
-                if (fields.length != 2) {
-                    throw new ParserException(">2 fields for " + Report.TIMESTAMP_ENTRY + " line: " + currLine);
+    
+                if (fields[0].equalsIgnoreCase(Report.PRODUCER_CLASS_ENTRY)) {
+                    if (fields.length != 2) {
+                        throw new ParserException("Bad RPT format: >2 fields for " + Report.PRODUCER_CLASS_ENTRY, currLine.getLineNumber(),
+                                GseaWebResources.RPT_PARSER_ERROR_CODE);
+                    }
+    
+                    cl = Class.forName(fields[1]);
                 }
-
-                ts = Long.parseLong(fields[1]);
-            }
-
-            if (fields[0].equalsIgnoreCase(Report.FILE_ENTRY)) {
-                if (fields.length != 2) {
-                    throw new ParserException(">2 fields for " + Report.FILE_ENTRY + " line: " + currLine);
+    
+                if (fields[0].equalsIgnoreCase(Report.TIMESTAMP_ENTRY)) {
+                    if (fields.length != 2) {
+                        throw new ParserException("Bad RPT format: >2 fields for " + Report.TIMESTAMP_ENTRY, currLine.getLineNumber(),
+                                GseaWebResources.RPT_PARSER_ERROR_CODE);
+                    }
+    
+                    try {
+                        ts = Long.parseLong(fields[1]);
+                    }
+                    catch (NumberFormatException nfe) {
+                        throw new ParserException("Bad RPT Format: could not parse field '"
+                                + fields[1] + "' as a long value.", currLine.getLineNumber(), nfe,
+                                GseaWebResources.RPT_PARSER_ERROR_CODE);
+                    }
                 }
-                filesList.add(new File(fields[1]));
-            } else if (fields[0].equalsIgnoreCase(Report.PARAM_ENTRY)) {
-                if (fields.length != 3) {
-                    throw new ParserException("Insufficient fields for " + Report.PARAM_ENTRY + " line: " + currLine);
+    
+                if (fields[0].equalsIgnoreCase(Report.FILE_ENTRY)) {
+                    if (fields.length != 2) {
+                        throw new ParserException("Bad RPT format: >2 fields for " + Report.FILE_ENTRY, currLine.getLineNumber(),
+                                GseaWebResources.RPT_PARSER_ERROR_CODE);
+                    }
+                    filesList.add(new File(fields[1]));
+                } else if (fields[0].equalsIgnoreCase(Report.PARAM_ENTRY)) {
+                    if (fields.length != 3) {
+                        throw new ParserException("Bad RPT format: Insufficient fields for " + Report.PARAM_ENTRY, currLine.getLineNumber(),
+                                GseaWebResources.RPT_PARSER_ERROR_CODE);
+                    }
+                    params.put(fields[1], fields[2]);
                 }
-                params.put(fields[1], fields[2]);
+    
+                currLine = nextLine(bin, currLine.getLineNumber());
+                currContent = currLine.getContent();
             }
+            File[] files = (File[]) filesList.toArray(new File[filesList.size()]);
 
-            currLine = nextLine(bin);
+            Report report = new DefaultReport(sourcepath, ts, cl, files, params, false);
+
+            return unmodlist(report);
         }
-
-        bin.close();
-
-        File[] files = (File[]) filesList.toArray(new File[filesList.size()]);
-
-        Report report = new DefaultReport(sourcepath, ts, cl, files, params, false);
-
-        return unmodlist(report);
-
+        finally {
+            bin.close();
+        }
     }
 
 

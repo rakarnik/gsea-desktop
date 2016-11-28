@@ -11,6 +11,8 @@ import edu.mit.broad.genome.utils.ParseException;
 import java.io.*;
 import java.util.*;
 
+import xapps.gsea.GseaWebResources;
+
 /**
  * Parses a data store in cls format to produce a single Template object.
  * <p/>
@@ -138,11 +140,11 @@ public class ClsParser extends AbstractParser implements Constants {
             if (currLine.startsWith("#")) {
                 String profileLine = nextNonEmptyLine(bin);
                 if (profileLine == null) {
-                    throw new ParserException("Bad cls data format - missing profile line for: " + currLine);
+                    throw new ParserException("Bad cls data format - missing profile line for: " + currLine, GseaWebResources.CLS_PARSER_ERROR_CODE);
                 }
 
                 if ((profileLine.length() == 0) || (profileLine.startsWith("#"))) {
-                    throw new ParserException("Bad cls data format - missing profile line for: " + currLine);
+                    throw new ParserException("Bad cls data format - missing profile line for: " + currLine, GseaWebResources.CLS_PARSER_ERROR_CODE);
                 }
 
                 nameProfileMap.put(currLine, profileLine);
@@ -201,7 +203,7 @@ public class ClsParser extends AbstractParser implements Constants {
         String firstLine = nextNonEmptyLine(bin);
 
         if (firstLine == null) {
-            throw new ParserException("Bad format for cls fike - check lines 1 and 2 --- they seem to have no content");
+            throw new ParserException("Bad format for cls fike - check lines 1 and 2 --- they seem to have no content", GseaWebResources.CLS_PARSER_ERROR_CODE);
         }
 
         if (isProbesLine(firstLine)) {
@@ -270,7 +272,10 @@ public class ClsParser extends AbstractParser implements Constants {
     private List _parse_new_style(String sourceFileName, BufferedReader buf, String firstLine) throws Exception {
 
         // read in the entire file
-        final StringDataframe sdf = new StringDataframeParser().parseSdf(sourceFileName, buf, firstLine);
+        // Note: faking the Line object here for now.  
+        // TODO: Need to rework this parser class at some point.
+        Line first = new Line(0, firstLine);
+        final StringDataframe sdf = new StringDataframeParser().parseSdf(sourceFileName, buf, first);
         // 'row' names are the sample names
         final String[] sampleNames = sdf.getRowNamesArray();
         final List preTemplates = new ArrayList();
@@ -278,7 +283,7 @@ public class ClsParser extends AbstractParser implements Constants {
         for (int c = 0; c < sdf.getNumCol(); c++) {
             final String colName = sdf.getColumnName(c);
             if (colName == null || colName.length() == 0) {
-                throw new ParserException("Bad column identifier (it was null or empty) >" + colName + "< at column: " + (c + 1));
+                throw new ParserException("Bad column identifier (it was null or empty) >" + colName + "< at column: " + (c + 1), GseaWebResources.CLS_PARSER_ERROR_CODE);
             } else if (isCommentColumn(colName)) {
                 // do nothing
             } else if (isNumericColumn(colName)) {
@@ -313,12 +318,12 @@ public class ClsParser extends AbstractParser implements Constants {
         try {
             ParseUtils.splitIntegers(line, theDelim, inds);
         } catch (ParseException e) {
-            throw new ParserException(e);
+            throw new ParserException(e, GseaWebResources.CLS_PARSER_ERROR_CODE);
         }
 
         if (inds.length != 3) {
             throw new ParserException("Missing data in header " + line + " found only "
-                    + inds.length + " fields .. expecting 3");
+                    + inds.length + " fields .. expecting 3", GseaWebResources.CLS_PARSER_ERROR_CODE);
         }
 
         //log.info("fHdrInts " + inds[0] + " " + inds[1] + " " + inds[2]);
@@ -349,7 +354,7 @@ public class ClsParser extends AbstractParser implements Constants {
 
             return cls;
         } else {
-            throw new ParserException("Bad format in cls file - expected the line to be of the form '# foo bar ...'");
+            throw new ParserException("Bad format in cls file - expected the line to be of the form '# foo bar ...'", GseaWebResources.CLS_PARSER_ERROR_CODE);
         }
     }
 
@@ -387,12 +392,12 @@ public class ClsParser extends AbstractParser implements Constants {
         if (template.getNumItems() != fHdrInts[0]) {
             throw new ParserException("Number of items found in cls data " + fItemCnt
                     + " is not equal to the number specified on the header line "
-                    + fHdrInts[0]);
+                    + fHdrInts[0], GseaWebResources.CLS_PARSER_ERROR_CODE);
         }
 
         if (template.getNumClasses() != fHdrInts[1]) {
             throw new ParserException("Number of classes found in cls data " + template.getNumClasses()
-                    + " is not equal to the number of classes specified on the header line " + fHdrInts[1]);
+                    + " is not equal to the number of classes specified on the header line " + fHdrInts[1], GseaWebResources.CLS_PARSER_ERROR_CODE);
         }
     }
 

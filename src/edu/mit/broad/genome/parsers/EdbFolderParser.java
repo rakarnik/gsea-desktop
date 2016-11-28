@@ -14,6 +14,7 @@ import edu.mit.broad.genome.objects.*;
 import edu.mit.broad.genome.objects.esmatrix.db.*;
 import edu.mit.broad.vdb.VdbRuntimeResources;
 import edu.mit.broad.vdb.chip.Chip;
+
 import org.dom4j.Attribute;
 import org.dom4j.Document;
 import org.dom4j.DocumentHelper;
@@ -22,17 +23,20 @@ import org.dom4j.io.OutputFormat;
 import org.dom4j.io.SAXReader;
 import org.dom4j.io.XMLWriter;
 
+import xapps.gsea.GseaWebResources;
+
 import java.io.*;
 import java.util.*;
 
 /**
  * Called a "folder" parser because works / makes a folder
  */
+// TODO: Parser needs more work.
 public class EdbFolderParser extends AbstractParser {
 
     // cant have tab (would jave been nice as easier to use in excel as when read _in_
     // the dom library seems to convert tabs into spaces
-    private static final char DELIM = ' ';
+    private static final String DELIM = " ";
 
     private static final String EDB = "EDB";
 
@@ -52,16 +56,11 @@ public class EdbFolderParser extends AbstractParser {
     private static final String ES_PROFILE = "ES_PROFILE";
 
 
-    // -------------------------------------------------------------------------------------------- //
     // well known file names
     private static final String EDB_FILE_NAME = "results.edb";
 
-    // -------------------------------------------------------------------------------------------- //
-
     // key -> pob id, value -> file in which it has been saved
     private Map fPobidFileMap;
-
-    // -------------------------------------------------------------------------------------------- //
 
     public EdbFolderParser() {
         super(EnrichmentDb.class);
@@ -166,7 +165,7 @@ public class EdbFolderParser extends AbstractParser {
 
     private static File _getEdbDir(final File gseaResultDir) throws ParserException {
         if (gseaResultDir.exists() == false || gseaResultDir.isDirectory() == false) {
-            throw new ParserException("Invalid gsea dir for parsing ... expecting a dir, got: " + gseaResultDir);
+            throw new ParserException("Invalid gsea dir for parsing ... expecting a dir, got: " + gseaResultDir, GseaWebResources.EDB_PARSER_ERROR_CODE);
         }
 
         File edb_dir;
@@ -190,7 +189,7 @@ public class EdbFolderParser extends AbstractParser {
 
     private static void barfIfMissing(String attName, Element el) throws ParserException {
         if (el.attribute(attName).getValue() == null || el.attribute(attName).getValue().length() == 0) {
-            throw new ParserException("Missing attribute " + attName + " in element: " + el.getName());
+            throw new ParserException("Missing attribute " + attName + " in element: " + el.getName(), GseaWebResources.EDB_PARSER_ERROR_CODE);
         }
     }
 
@@ -227,20 +226,7 @@ public class EdbFolderParser extends AbstractParser {
             }
         }
 
-        export(pob_edb, edb_dir, EDB_FILE_NAME, null, true, true);
-    }
-
-    // dont make reports (thats not my job)
-    public void export(final PersistentObject pob_edb,
-                       final File saveInThisDir,
-                       String edb_file_name,
-                       String force_this_rnk_name_opt,
-                       final boolean exportTemplateIfAvailable,
-                       final boolean exportTheGeneSetMatrix) throws Exception {
-
-        if (pob_edb == null) {
-            throw new IllegalArgumentException("Param pob_edb cannot be null");
-        }
+        // dont make reports (thats not my job)
 
         final EnrichmentDb edb = (EnrichmentDb) pob_edb;
 
@@ -251,24 +237,20 @@ public class EdbFolderParser extends AbstractParser {
         // IMP: make sure teh # part is removed before saving
         final Struc struc = new Struc(edb.getNumResults());
 
-        if (exportTheGeneSetMatrix) {
-            Set names = new HashSet();
-            java.util.List gsets = new ArrayList();
-            for (int i = 0; i < edb.getNumResults(); i++) {
-                GeneSet gset = edb.getResult(i).getGeneSet();
-                String name = gset.getName(true);
-                if (!names.contains(name)) {
-                    GeneSet cgset = gset.cloneShallow(name);
-                    gsets.add(cgset);
-                    names.add(name);
-                }
+        Set names = new HashSet();
+        List gsets = new ArrayList();
+        for (int i = 0; i < edb.getNumResults(); i++) {
+            GeneSet gset = edb.getResult(i).getGeneSet();
+            String name = gset.getName(true);
+            if (!names.contains(name)) {
+                GeneSet cgset = gset.cloneShallow(name);
+                gsets.add(cgset);
+                names.add(name);
             }
-            final GeneSetMatrix gm = new DefaultGeneSetMatrix("gene_sets", gsets);
-            struc.gmFile = NamingConventions.createSafeFile(saveInThisDir, gm.getName() + ".gmt");
-            ParserFactory.saveGmt(gm, struc.gmFile, false);
-        } else {
-            struc.gmFile = new File(saveInThisDir, "gene_sets.gmt"); // pseudo file not saved
         }
+        final GeneSetMatrix gm = new DefaultGeneSetMatrix("gene_sets", gsets);
+        struc.gmFile = NamingConventions.createSafeFile(edb_dir, gm.getName() + ".gmt");
+        ParserFactory.saveGmt(gm, struc.gmFile, false);
 
         // STEP2: Now make the edb xml file and save it
         final Document document = DocumentHelper.createDocument();
@@ -305,19 +287,15 @@ public class EdbFolderParser extends AbstractParser {
             //save rnk
             String fname;
 
-            if (force_this_rnk_name_opt != null) {
-                fname = _fixExt(force_this_rnk_name_opt, "rnk");
-            } else {
-                fname = _fixExt(dtg.getRankedList().getName(), "rnk");
-            }
-            struc.rankedListFiles[i] = saveIfNeeded(fname, dtg.getRankedList(), saveInThisDir);
+            fname = _fixExt(dtg.getRankedList().getName(), "rnk");
+            struc.rankedListFiles[i] = saveIfNeeded(fname, dtg.getRankedList(), edb_dir);
             el.addAttribute(Headers.RANKED_LIST, fname);
 
             // save template
-            if (exportTemplateIfAvailable && dtg.getTemplate() != null) {
+            if (dtg.getTemplate() != null) {
                 String bn = AuxUtils.getBaseNameOnly(dtg.getTemplate().getName()); // @todo is this correct??
                 fname = _fixExt(bn, "cls");
-                struc.templateFiles[i] = saveIfNeeded(fname, dtg.getTemplate(), saveInThisDir);
+                struc.templateFiles[i] = saveIfNeeded(fname, dtg.getTemplate(), edb_dir);
                 el.addAttribute(Headers.TEMPLATE, fname);
             } else {
                 el.addAttribute(Headers.TEMPLATE, "na_as_pre_ranked");
@@ -343,20 +321,22 @@ public class EdbFolderParser extends AbstractParser {
             el.addAttribute(RANK_SCORE_AT_ES, "" + Printf.format(score.getRankScoreAtES()));
         }
 
-        if (edb_file_name.endsWith("edb") == false) {
-            edb_file_name = edb_file_name + ".edb";
-        }
-
-        File edb_file = new File(saveInThisDir, edb_file_name);
+        File edb_file = new File(edb_dir, EDB_FILE_NAME);
         PrintWriter pw = new PrintWriter(new FileOutputStream(edb_file));
-        //OutputFormat format = OutputFormat.createCompactFormat();
-        //Make sure the XML file is UTF-8 encoding --> issue loading edb file into EM 
-        OutputFormat format = OutputFormat.createPrettyPrint();
-        format.setEncoding("UTF-8");
-        XMLWriter writer = new XMLWriter(new FileOutputStream(edb_file), format);
-        writer.write(document);
-        writer.close();
-        pw.close();
+        try {
+            OutputFormat format = OutputFormat.createPrettyPrint();
+            format.setEncoding("UTF-8");
+            XMLWriter writer = new XMLWriter(new FileOutputStream(edb_file), format);
+            try {
+                writer.write(document);
+            }
+            finally {
+                writer.close();
+            }
+        }
+        finally {
+            pw.close();
+        }
 
         doneExport();
     }

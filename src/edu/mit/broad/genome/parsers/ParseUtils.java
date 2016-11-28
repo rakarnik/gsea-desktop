@@ -6,6 +6,7 @@ package edu.mit.broad.genome.parsers;
 import edu.mit.broad.genome.*;
 import edu.mit.broad.genome.math.Vector;
 import edu.mit.broad.genome.utils.FileUtils;
+import edu.mit.broad.genome.utils.ParseException;
 
 import java.io.*;
 import java.net.URI;
@@ -28,8 +29,9 @@ import java.util.*;
  *
  * @author Michael Angelo
  * @author Aravind Subramanian
- * @version 1.0
+ * @author David Eby
  */
+// TODO: These methods should be modified to give more user-friendly error messages to their call sites.
 public class ParseUtils {
 
     private static final char DEFAULT_FIELD_SEP_CSV = ',';
@@ -37,7 +39,7 @@ public class ParseUtils {
     /**
      * NamingConventions delimiters - <pre>" \t\n,;:"</pre>
      */
-    public final static String DEFAULT_DELIMS = " \t\n,;:";
+    private final static String DEFAULT_DELIMS = " \t\n,;:";
 
 
     /**
@@ -59,9 +61,10 @@ public class ParseUtils {
         return s;
     }
 
+    // TODO: consider moving to the only call site
     public static float[] string2floats(String s)
             throws NumberFormatException, IllegalArgumentException {
-
+        
         if (null == s) {
             throw new NullPointerException("Cannot work on null String");
         }
@@ -71,55 +74,42 @@ public class ParseUtils {
         return _doFloatParse(tok);
     }
 
-    public static int[] string2ints(String s, String delims)
-            throws NumberFormatException, IllegalArgumentException {
+    public static int[] string2ints(String s, String delims) throws ParseException {
 
         if (null == s) {
-            throw new NullPointerException("Cannot work on null String");
+            throw new ParseException("Internal parsing error: attempt to work on null String");
         }
 
         StringTokenizer tok = new StringTokenizer(s, delims);
-
-        return _doIntParse(tok);
-    }
-
-    public static int[] string2ints(String s, char delim)
-            throws NumberFormatException, IllegalArgumentException {
-
-        return string2ints(s, Character.toString(delim));
-    }
-
-    public static float[] string2floats(String s, String delims)
-            throws NumberFormatException, IllegalArgumentException {
-
-        if (null == s) {
-            throw new NullPointerException("Cannot work on null String");
-        }
-
-        //System.out.println("##### delim>" + delims + "<");
-        StringTokenizer tok = new StringTokenizer(s, delims);
-        return _doFloatParse(tok);
-    }
-
-    public static Vector string2Vector(String s, char delim) {
-        return new Vector(string2floats(s, Character.toString(delim)));
-    }
-
-    private static int[] _doIntParse(StringTokenizer tok) throws NumberFormatException {
 
         int[] ret = new int[tok.countTokens()];
         int i = 0;
-
+        
         String curr;
         while (tok.hasMoreTokens()) {
             curr = tok.nextToken();
             // doing it the long way so that on error, the exact element that
             // caused it is specified in the exception message
-            ret[i] = Integer.parseInt(curr);
+            try {
+                ret[i] = Integer.parseInt(curr);
+            }
+            catch (NumberFormatException nfe) {
+                throw new ParseException("Only integers expected but non-integer found in column " + (i+1), nfe);
+            }
             i++;
         }
-
+        
         return ret;
+    }
+
+    public static Vector string2Vector(String s, String delim) {
+        if (null == s) {
+            throw new NullPointerException("Cannot work on null String");
+        }
+        
+        //System.out.println("##### delim>" + delims + "<");
+        StringTokenizer tok = new StringTokenizer(s, delim);
+        return new Vector(_doFloatParse(tok));
     }
 
     private static float[] _doFloatParse(StringTokenizer tok) throws NumberFormatException {
@@ -146,6 +136,7 @@ public class ParseUtils {
                                           final boolean useNullonMagicNullWord) throws IllegalArgumentException {
 
         if (null == s) {
+            // TODO: replace with ParseException as with string2ints etc.
             throw new NullPointerException("Cannot parse on null String");
         }
 
@@ -161,45 +152,39 @@ public class ParseUtils {
         return ret;
     }
 
-    public static String[] string2stringsV2(String s) throws IllegalArgumentException {
-        List ret = string2stringsV2_list(s);
-        return (String[]) ret.toArray(new String[ret.size()]);
-    }
-
-    // double tabs are tolerated and no need for the NULL thing
-    public static List string2stringsV2_list(String s) throws IllegalArgumentException {
+    // TODO: consider moving to the only call site
+    public static String[] string2stringsV2(String s) throws ParseException {
 
         if (null == s) {
-            throw new NullPointerException("Cannot work on null String");
+            throw new ParseException("Internal parsing error: attempt to work on null String");
         }
-
+        
         s = s.trim(); // no tabs before or after
-
+        
         StringTokenizer tok = new StringTokenizer(s, "\t", true); // note including the delim in rets
-        List ret = new ArrayList();
-
-        //System.out.println("# " + tok.countTokens());
+        List ret1 = new ArrayList();
+        
         String prev = null;
         while (tok.hasMoreTokens()) {
             String curr = tok.nextToken(); // dont trim!
             if (!curr.equals("\t")) {
-                ret.add(curr);
+                ret1.add(curr);
             }
-
+        
             if (curr.equals(prev)) { // 2 consecutive tabs
-                ret.add(""); //empty field
+                ret1.add(""); //empty field
             }
-
+        
             prev = curr;
         }
-
-        return ret;
+        List ret = ret1;
+        return (String[]) ret.toArray(new String[ret.size()]);
     }
 
-    public static List string2stringsList(String s, String delim) throws IllegalArgumentException {
+    public static List string2stringsList(String s, String delim) throws ParseException {
 
         if (null == s) {
-            throw new NullPointerException("Cannot work on null String");
+            throw new ParseException("Internal parsing error: attempt to work on null String");
         }
 
         StringTokenizer tok = new StringTokenizer(s, delim);
@@ -235,22 +220,14 @@ public class ParseUtils {
     private static final String[] MAGIC_NULLS = new String[]{Constants.NULL, Constants.NA, Constants.HYPHEN, Headers.AFFX_NULL};
 
     private static String _magic(String s, boolean respectNullMagicWord) {
-        return _magic(s, MAGIC_NULLS, respectNullMagicWord);
-    }
-
-    /**
-     * @noinspection ReturnOfNull
-     */
-    private static String _magic(String s, String[] magicNulls, boolean respectNullMagicWord) {
-
         if (respectNullMagicWord) {
-            for (int i = 0; i < magicNulls.length; i++) {
-                if (s.trim().equalsIgnoreCase(magicNulls[i])) {
+            for (int i = 0; i < MAGIC_NULLS.length; i++) {
+                if (s.trim().equalsIgnoreCase(MAGIC_NULLS[i])) {
                     return null;
                 }
             }
         }
-
+        
         return s;
     }
 
@@ -293,6 +270,7 @@ public class ParseUtils {
      *
      * @return The number of integers
      */
+    // TODO: consider moving to the only call site
     public static int splitIntegers(String aStr, char aDelim, int[] aInts) throws Exception {
 
         int curInd = 0, prevInd = 0;
@@ -322,6 +300,7 @@ public class ParseUtils {
         return i;
     }
 
+    // TODO: consider moving to the only call site
     public static List getUniqueTokens(StringTokenizer tok) {
 
         List uniqs = new ArrayList();
@@ -345,6 +324,7 @@ public class ParseUtils {
      * @return Description of the Return Value
      * @throws IOException Description of the Exception
      */
+    // TODO: consider moving to the only call site
     public static List readFfn(File aFile) throws IOException {
 
         BufferedReader buf = new BufferedReader(new FileReader(aFile));
@@ -365,23 +345,6 @@ public class ParseUtils {
         return lines;
     }
 
-    /*
-     * The filepath was formerly treated as a path OR a URL, but this lead to errors on Windows where
-     * our URL detection fails to identify 'C:/' as a path.  We might revamp this later (see GSEA-1170)
-     * but for now these will be restricted to being handled as *local files only*.  Loading param_files
-     * from URL seems like an unlikely use-case anyway.
-     */
-    public static Properties readKeyVal(final String filepath,
-                                        final boolean containsHeaderLine,
-                                        final boolean enforceValueMustExist,
-                                        final boolean enforceNonRepeatedKeys) throws IOException {
-        // Inlining code from working code path formerly in FileUtils.toBufferedReader().
-        URI uri = new File(filepath).toURI();
-        URL url = uri.toURL();
-        BufferedReader buf = new BufferedReader(new InputStreamReader(url.openStream()));
-        return readKeyVal(buf, containsHeaderLine, enforceValueMustExist, enforceNonRepeatedKeys);
-    }
-
     /**
      * Convenience method to read in a file with key=value pairs
      * into a hashtable
@@ -393,20 +356,31 @@ public class ParseUtils {
      * key1\tval1
      * key2\tval2
      */
-    public static Properties readKeyVal(final BufferedReader buf,
+    // TODO: consider moving to the only call site
+    public static Properties readKeyVal(final String filepath,
                                         final boolean containsHeaderLine,
                                         final boolean enforceValueMustExist,
                                         final boolean enforceNonRepeatedKeys) throws IOException {
-
+        /*
+         * The filepath was formerly treated as a path OR a URL, but this lead to errors on Windows where
+         * our URL detection fails to identify 'C:/' as a path.  We might revamp this later (see GSEA-1170)
+         * but for now these will be restricted to being handled as *local files only*.  Loading param_files
+         * from URL seems like an unlikely use-case anyway.
+         */
+        // Inlining code from working code path formerly in FileUtils.toBufferedReader().
+        URI uri = new File(filepath).toURI();
+        URL url = uri.toURL();
+        BufferedReader buf = new BufferedReader(new InputStreamReader(url.openStream()));
+        final BufferedReader buf1 = buf;
         String line;
         final Properties prp = new Properties();
-
-        line = nextLine(buf);
-
+        
+        line = nextLine(buf1);
+        
         if (containsHeaderLine) {
-            line = nextLine(buf);
+            line = nextLine(buf1);
         }
-
+        
         int lineNum = 0;
         List duplLines = new ArrayList();
         while (line != null) {
@@ -418,32 +392,32 @@ public class ParseUtils {
                 val = tok.nextToken().trim();
             } else if (tok.countTokens() == 1) {
                 key = tok.nextToken().trim();
-
+        
             } else {
                 throw new IOException("Bad line format: " + line + " # tokens: " + tok.countTokens() + " line: " + lineNum);
             }
-
+        
             if (enforceValueMustExist) {
                 if (val == null || val.length() == 0) {
                     throw new RuntimeException("Value must exist. Missing on line: " + lineNum + " val: " + val);
                 }
             }
-
+        
             if (key.length() == 0) {
                 throw new RuntimeException("Empty key on line: " + lineNum);
             }
-
+        
             if (prp.containsKey(key) && enforceNonRepeatedKeys) {
                 duplLines.add(line);
             }
-
+        
             prp.setProperty(key, val);
-            line = nextLine(buf);
+            line = nextLine(buf1);
             lineNum++;
         }
-
-        buf.close();
-
+        
+        buf1.close();
+        
         if (!duplLines.isEmpty() && enforceNonRepeatedKeys) {
             StringBuffer sbuf = new StringBuffer();
             for (int i = 0; i < duplLines.size(); i++) {
@@ -451,72 +425,51 @@ public class ParseUtils {
             }
             throw new RuntimeException("There are repeated keys:" + duplLines.size() + "\n" + duplLines);
         }
-
+        
         if (lineNum == 0) {
             throw new IllegalArgumentException("Empty input stream!! ");
         }
-
+        
         return prp;
     }
 
-    public static String slurp(URL url, boolean ignoreanycomments) throws IOException {
-        return slurp(_buf(url), ignoreanycomments);
-    }
-
-    public static String slurp(BufferedReader buf, boolean ignoreanycomments) throws IOException {
-
-        String line;
-        String s = "";
-
-        while ((line = buf.readLine()) != null) {
-            if ((ignoreanycomments) && (line.startsWith(Constants.COMMENT_CHAR))) {
-                ;
-            } else {
-                s = s.concat(line).concat("\n");
-            }
-        }
-
-        buf.close();
-
-        return s;
-    }
-
+    // TODO: consider moving to the only call site
     public static String[] slurpIntoArray(URL url, boolean ignoreanycomments) throws IOException {
-        Set set = slurpIntoSet(_buf(url), ignoreanycomments);
-        return (String[]) set.toArray(new String[set.size()]);
-    }
-
-    public static Set slurpIntoSet(BufferedReader buf, boolean ignoreanycomments) throws IOException {
-        Set set = new HashSet();
+        if (url == null) {
+            throw new IllegalArgumentException("Parameter url cannot be null");
+        }
+        InputStreamReader isr = new InputStreamReader(url.openStream());
+        BufferedReader buf = new BufferedReader(isr);
+        Set set1 = new HashSet();
         String line;
-
+        
         while ((line = buf.readLine()) != null) {
             line = line.trim();
-
+        
             if (line.length() == 0) {
                 continue;
             }
-
+        
             if ((ignoreanycomments) && (line.startsWith(Constants.COMMENT_CHAR))) {
                 continue;
             }
-
-            set.add(line);
+        
+            set1.add(line);
         }
-
+        
         buf.close();
-
-        return set;
+        Set set = set1;
+        return (String[]) set.toArray(new String[set.size()]);
     }
 
+    // TODO: consider moving to the only call site
     public static int countLines(File file, boolean ignoreblanklines) throws IOException {
-        return countLines(_buf(file), ignoreblanklines);
-    }
-
-    public static int countLines(BufferedReader buf, boolean ignoreblanklines) throws IOException {
-
+        if (file == null) {
+            throw new IllegalArgumentException("Parameter file cannot be null");
+        }
+        BufferedReader buf = new BufferedReader(new FileReader(file));
         int numberOfLines = 0;
-
+        
         if (!ignoreblanklines) {
             while (buf.readLine() != null) {
                 numberOfLines++;
@@ -527,13 +480,13 @@ public class ParseUtils {
                 if (currLine.trim().length() > 0) {
                     numberOfLines++;
                 }
-
+        
                 currLine = buf.readLine();
             }
         }
-
+        
         buf.close();
-
+        
         return numberOfLines;
     }
 
@@ -544,7 +497,7 @@ public class ParseUtils {
      * @return
      * @throws IOException
      */
-    public static String nextLine(BufferedReader buf) throws IOException {
+    private static String nextLine(BufferedReader buf) throws IOException {
 
         String currLine = buf.readLine();
 
@@ -566,36 +519,17 @@ public class ParseUtils {
         return currLine;
     }
 
-    private static BufferedReader _buf(URL url) throws IOException {
-        if (url == null) {
-            throw new IllegalArgumentException("Parameter url cannot be null");
-        }
-        InputStreamReader isr = new InputStreamReader(url.openStream());
-        return new BufferedReader(isr);
-    }
-
-    private static BufferedReader _buf(File file) throws IOException {
-        if (file == null) {
-            throw new IllegalArgumentException("Parameter file cannot be null");
-        }
-
-        return new BufferedReader(new FileReader(file));
-    }
-
     /**
      * parse: break the input String into fields
-     *
-     * @return java.util.Iterator containing each field
-     *         from the original as a String, in order.
      */
+    // TODO: consider replacing outside call sites with method below
     public static String[] string2strings_csv(final String csvLine) {
-        final StringBuffer sb = new StringBuffer();
 
         final List list = new ArrayList();
         int i = 0;
 
         do {
-            sb.setLength(0);
+            final StringBuffer sb = new StringBuffer();
             if (i < csvLine.length() && csvLine.charAt(i) == '"') {
                 i = advQuoted_for_csv(csvLine, sb, ++i);    // skip quote
             } else {
@@ -608,6 +542,7 @@ public class ParseUtils {
         return (String[]) list.toArray(new String[list.size()]);
     }
 
+    // TODO: consider moving to the only call site
     public static List string2stringsList_csv(final String csvLine) {
         final String[] ss = string2strings_csv(csvLine);
         final List list = new ArrayList();

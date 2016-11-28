@@ -36,6 +36,7 @@ public class HCLAlgorithm {
             return GPWrappers.createDataset(ied, ds.getAnnot());
         } catch (AlgorithmException e) {
             // Wrap in a GSEA exception in case we ever swap out the Clustering implementation.
+            // TODO: Adjust this to be an Exception with no online help.
             throw new StandardException("Unexpected issue while clustering", e, 9001);
         }
     }

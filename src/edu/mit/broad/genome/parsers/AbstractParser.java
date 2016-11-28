@@ -8,6 +8,8 @@ import edu.mit.broad.genome.NotImplementedException;
 import edu.mit.broad.genome.XLogger;
 import edu.mit.broad.genome.objects.PersistentObject;
 import edu.mit.broad.genome.utils.ClassUtils;
+import edu.mit.broad.genome.utils.ParseException;
+
 import org.apache.log4j.Logger;
 
 import java.io.*;
@@ -106,82 +108,101 @@ public abstract class AbstractParser implements Parser {
      * @return
      * @throws IOException
      */
-    protected String nextLine(final BufferedReader bin) throws IOException {
-        return nextLine(bin, true);
-    }
-
-    protected String nextLine(final BufferedReader bin, final boolean autoAdd2Comment) throws IOException {
-
+    protected Line nextLine(final BufferedReader bin, int prevLineNumber) throws IOException {
+        int lineNumber = prevLineNumber;
         String currLine = bin.readLine();
+        lineNumber++;
         if (currLine == null) {
-            return null;
+            return new Line(lineNumber, null);
         }
 
         currLine = currLine.trim();
 
+        // TODO: fix parsing of comment characters.
+        // We currently *always* handle '#' as a comment, even for files that don't treat it as such.
         while ((currLine != null) && ((currLine.length() == 0) || (currLine.startsWith(Constants.COMMENT_CHAR)))) {
-            // System.out.println(">>> " + currLine);
-            if (currLine.startsWith(Constants.COMMENT_CHAR) && autoAdd2Comment) {
+            if (currLine.startsWith(Constants.COMMENT_CHAR)) {
                 fComment.add(currLine);
             }
 
             currLine = bin.readLine();
+            lineNumber++;
             if (currLine != null) {
                 currLine = currLine.trim();
             }
         }
 
-        //log.debug("comments=" + fComment.toString());
-
-        return currLine;
+        return new Line(lineNumber, currLine);
+    }
+    
+    /**
+     * adds any comment lines found to the fComnent class var
+     *
+     * @param bin
+     * @return
+     * @throws IOException
+     */
+    // Temporary proxy to new Line method for legacy callers
+    protected String nextLine(final BufferedReader bin) throws IOException {
+        Line currLine = nextLine(bin, 0);
+        return currLine.getContent();
     }
 
     // comments are not next'ed over
-    protected String nextNonEmptyLine(BufferedReader bin) throws IOException {
+    protected Line nextNonEmptyLine(BufferedReader bin, int prevLineNumber) throws IOException {
 
+        int lineNumber = prevLineNumber;
         String currLine = bin.readLine();
+        lineNumber++;
         if (currLine == null) {
-            return null;
+            return new Line(lineNumber, null);
         }
 
         currLine = currLine.trim();
 
         while ((currLine != null) && ((currLine.length() == 0))) {
-
             currLine = bin.readLine();
+            lineNumber++;
             if (currLine != null) {
                 currLine = currLine.trim();
             }
         }
 
-        return currLine;
-
+        return new Line(lineNumber, currLine);
+    }
+    
+    // comments are not next'ed over
+    // Temporary proxy to new Line method for legacy callers
+    protected String nextNonEmptyLine(BufferedReader bin) throws IOException {
+        Line currLine = nextNonEmptyLine(bin, 0);
+        return currLine.getContent();
     }
 
-    protected String nextLineTrimless(BufferedReader bin) throws IOException {
+    protected Line nextLineTrimless(BufferedReader bin, int prevLineNumber) throws IOException {
+        int lineNumber = prevLineNumber;
         String currLine = bin.readLine();
+        lineNumber++;
         if (currLine == null) {
-            return null;
+            return new Line(lineNumber, null);
         }
 
-        //currLine = currLine.trim();
-
+        // TODO: fix parsing of comment characters.
+        // We currently *always* handle '#' as a comment, even for files that don't treat it as such.
         while ((currLine != null) && ((currLine.length() == 0) || (currLine.startsWith(Constants.COMMENT_CHAR)))) {
-
             if (currLine.startsWith(Constants.COMMENT_CHAR)) {
                 fComment.add(currLine);
             }
             currLine = bin.readLine();
-
-            /*
-            if (currLine != null) {
-                currLine = currLine.trim();
-            }
-            */
+            lineNumber++;
         }
 
-        return currLine;
-
+        return new Line(lineNumber, currLine);
+    }
+    
+    // Temporary proxy to new Line method for legacy callers
+    protected String nextLineTrimless(BufferedReader bin) throws IOException {
+        Line currLine = nextLineTrimless(bin, 0);
+        return currLine.getContent();
     }
 
     protected boolean isNull(Object obj) {
@@ -198,16 +219,12 @@ public abstract class AbstractParser implements Parser {
         return Constants.NULL.equalsIgnoreCase(s.trim());
     }
 
-    protected boolean isNa(final String s) {
-        return Constants.NA.equalsIgnoreCase(s.trim());
-    }
-
     protected boolean isNullorNa(final String s) {
         if (isNull(s)) {
             return true;
         }
 
-        return isNa(s);
+        return Constants.NA.equalsIgnoreCase(s.trim());
     }
 
     protected PrintWriter startExport(PersistentObject pob, File file) throws IOException {
@@ -228,12 +245,6 @@ public abstract class AbstractParser implements Parser {
             throw new IllegalArgumentException("Parameter os cannot be null");
         }
 
-        /* @todo buggy
-        if (DataFormat.isCompatibleRepresentationClass(pob, fRepClass) == false) {
-            throw new IllegalArgumentException("Invalid pob for this parser - expecting: " + getRepresentationClass() + " but got: " + pob.getClass());
-        }
-        */
-
         if (!fSilentMode) {
             //TraceUtils.showTrace();
             log.debug("Exporting: " + pob.getName() + " to: " + toName + " " + pob.getClass());
@@ -248,39 +259,44 @@ public abstract class AbstractParser implements Parser {
             _exportPw.flush();
             _exportPw.close();
         }
-
-        //log.info("Done exporting " + fRepClassName);
     }
-
-    //protected void startImport() {
-    // dont check as iffy
-    /*
-    if (_file == null) {
-        throw new IllegalStateException("Parameter _file cannot be null");
-    }
-
-    if (_objname == null) {
-        throw new IllegalStateException("Parameter _objname cannot be null");
-    }
-    */
-
-    //  log.info("Importing: " + _importObjName + " from: " + _importFile);
-
-    //}
 
     protected void startImport(String sourcepath) {
         if (!fSilentMode) {
-            //TraceUtils.showTrace();
             log.info("Begun importing: " + fRepClassName + " from: " + sourcepath);
         }
     }
 
-
     protected void doneImport() {
-        //log.info("Done importing: " + fRepClassName);
     }
 
+    protected class Line {
+        private int lineNumber;
+        private String content;
 
+        public Line(int lineNumber, String content) {
+            this.lineNumber = lineNumber;
+            this.content = content;
+        }
+
+        public int getLineNumber() {
+            return lineNumber;
+        }
+
+        public void setLineNumber(int lineNumber) {
+            this.lineNumber = lineNumber;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        public void setContent(String content) {
+            this.content = content;
+        }
+    }
+    
+    
     protected class Comment {
 
         private List fLines;
@@ -319,24 +335,6 @@ public abstract class AbstractParser implements Parser {
             }
         }
 
-        
-
-        /* @todo deprec after vdb cleanup
-        protected Chip getChip() {
-            String chipName = getValue(Headers.CHIP);
-
-            if (chipName == null) {
-                chipName = getValue(Headers.CHIP.toLowerCase());
-            }
-
-            if (chipName != null) {
-                return VdbRuntimeResources.getChip(chipName);
-            } else {
-                return null;
-            }
-        }
-        */
-
         public String toString() {
             if (fLines == null && fKeyValues == null) {
                 return "";
@@ -356,20 +354,19 @@ public abstract class AbstractParser implements Parser {
 
             return buf.toString();
         }
-
     }
 
-    protected static List string2stringsV2(String s, int expectedLen) throws IllegalArgumentException {
+    // TODO: review whether this is always used for NAME\tDescription only and if so optimize. 
+    protected static List string2stringsV2(String s, int expectedLen) throws ParseException {
 
         if (null == s) {
-            throw new NullPointerException("Cannot work on null String");
+            throw new ParseException("Internal parsing error: attempt to work on null String");
         }
 
         String delim = "\t"; // @note, always
         StringTokenizer tok = new StringTokenizer(s, delim, true); // note including the delim in rets
         List ret = new ArrayList();
         String prev = null;
-        //System.out.println("PARSING>" + s + "<"  + tok.countTokens());
 
         int cnt = 0;
         while (tok.hasMoreTokens()) {
@@ -424,13 +421,11 @@ public abstract class AbstractParser implements Parser {
         }
     }
 
-
-    protected static int indexOf(final String s, final List list, final boolean barfIfMising) throws ParserException {
+    protected static int indexOf(final String s, final List list, final boolean barfIfMising, int lineNumberForError) throws ParserException {
         int index = list.indexOf(s);
-        if (index == -1 && barfIfMising) {
-            throw new ParserException("Column not found: " + s);
+        if (barfIfMising && index == -1) {
+            throw new ParserException("Expected column not found: " + s, lineNumberForError);
         }
         return index;
     }
-
 }    // End AbstractParser

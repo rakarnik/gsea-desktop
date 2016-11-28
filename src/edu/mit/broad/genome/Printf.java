@@ -63,24 +63,19 @@ public class Printf {
         return buf.toString();
     }
 
-    public static String format(final Vector v, final char delim) {
-        return format(v, DEFAULT_PRECISION, delim);
-    }
-
-    public static String format(final Vector v, final int precision, final char delim) {
-
+    public static String format(final Vector v, final String delim) {
         if (v == null) {
             return "";
         }
-
+        
         StringBuffer buf = new StringBuffer();
         for (int i = 0; i < v.getSize(); i++) {
-            buf.append(format(v.getElement(i), precision));
+            buf.append(format(v.getElement(i), DEFAULT_PRECISION));
             if (i != v.getSize() - 1) {
                 buf.append(delim);
             }
         }
-
+        
         return buf.toString();
     }
 
@@ -106,33 +101,30 @@ public class Printf {
         return buf.toString();
     }
 
+    // TODO: consider moving to the only call site
     public static void out(final int[] arr) {
-        System.out.println(outs(arr));
-    }
-
-    public static String outs(final int[] arr) {
 
         if (arr == null) {
-            return "Null array";
+            System.out.println("Null array");
         }
-
-        StringBuffer buf = new StringBuffer("array length: " + arr.length).append('\n');
-        int max = 200;
-
-        if (arr.length < max) {
-            max = arr.length;
+        else {
+            StringBuffer buf = new StringBuffer("array length: " + arr.length).append('\n');
+            int max = 200;
+            
+            if (arr.length < max) {
+                max = arr.length;
+            }
+            
+            for (int i = 0; i < max; i++) {
+                buf.append(arr[i]).append(' ');
+            }
+            
+            buf.append("\nand so on ...\n");
+            System.out.println(buf.toString());
         }
-
-        for (int i = 0; i < max; i++) {
-            buf.append(arr[i]).append(' ');
-        }
-
-        buf.append("\nand so on ...\n");
-
-        return buf.toString();
     }
 
-    public static String format(int[] arr, char delim) {
+    public static String format(int[] arr, String delim) {
 
         if (arr == null) {
             return "";

@@ -63,13 +63,14 @@ public class FSetParser extends AbstractParser {
 
     private void _export(GeneSet gset, File file) throws Exception {
         PrintWriter pw = startExport(gset, file);
-        for (int i = 0; i < gset.getNumMembers(); i++) {
-            //System.out.println(">>>> " + m.getMember(i));
-            pw.println(gset.getMember(i));
+        try {
+            for (int i = 0; i < gset.getNumMembers(); i++) {
+                pw.println(gset.getMember(i));
+            }
         }
-
-        pw.close();
-
+        finally {
+            pw.close();
+        }
     }
 
     /**
@@ -84,21 +85,24 @@ public class FSetParser extends AbstractParser {
     }    // End parse()
 
     protected FSet parse(String sourcepath, BufferedReader buf) throws IOException {
-        String currLine = nextLine(buf);
+        try {
+            Line currLine = nextLine(buf, 0);
+            String currContent = currLine.getContent();
+    
+            List lines = new ArrayList();
+            while (currContent != null) {
+                lines.add(currContent);
+                currLine = nextLine(buf, currLine.getLineNumber());
+                currContent = currLine.getContent();
+            }
+            final String[] members = (String[]) lines.toArray(new String[lines.size()]);
 
-        List lines = new ArrayList();
-        while (currLine != null) {
-            lines.add(currLine);
-            currLine = nextLine(buf);
+            // assume no desc for fset
+            return new FSet(sourcepath, null, members);
         }
-
-
-        buf.close();
-
-        final String[] members = (String[]) lines.toArray(new String[lines.size()]);
-
-        // assume no desc for fset
-        return new FSet(sourcepath, null, members);
+        finally {
+            buf.close();
+        }
     }
 
 }    // End FSetParser
