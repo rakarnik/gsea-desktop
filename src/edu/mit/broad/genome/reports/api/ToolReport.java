@@ -532,10 +532,6 @@ public class ToolReport implements Report {
             return savePageXls(sdf, fileName, inDir); // recall this
         }
 
-        if (idf instanceof StringDataframe) {
-            ((StringDataframe) idf).replace("NaN", ""); // @note default bhaviour
-        }
-
         File file = _createFile(fileName, DataFormat.XLS_FORMAT.getExtension(), inDir);
         try {
 

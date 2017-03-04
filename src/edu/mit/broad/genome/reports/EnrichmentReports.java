@@ -615,6 +615,8 @@ public class EnrichmentReports extends ChartHelper {
 
         final String[] gsetNames = new String[results.length];
         final TIntObjectHashMap cell_id_linkMap = new TIntObjectHashMap();
+        final TIntObjectHashMap cell_id_colorMap = new TIntObjectHashMap();
+
         final StringMatrix sm = new StringMatrix(gsetNames.length, BASIC_COL_NAMES.length);
 
         // for the bg shading of the hit plot -- just needs to be made once for all sets on this rl
@@ -626,6 +628,10 @@ public class EnrichmentReports extends ChartHelper {
             final EnrichmentResult result = results[r];
             gsetNames[r] = result.getGeneSet().getName(true);
             HtmlPage htmlPage = null;
+            
+            boolean haveNaN = Float.isNaN(result.getScore().getES()) || Float.isNaN(result.getScore().getNES()) || true ||
+                    Float.isNaN(result.getScore().getNP()) || Float.isNaN(result.getScore().getFDR()) || Float.isNaN(result.getScore().getFWER());
+            
             sm.setElement(r, coln++, gsetNames[r]);
 
             if (makeDetailsPage && r < showDetailsForTopXSets) {
@@ -662,37 +668,41 @@ public class EnrichmentReports extends ChartHelper {
                 sm.setElement(r, coln++, ""); // i.e desc
             }
 
+            // TODO: evaluate these settings for report precision consistency
             sm.setElement(r, coln++, result.getScore().getNumHits());
-            sm.setElement(r, coln++, result.getScore().getES());
-            sm.setElement(r, coln++, result.getScore().getNES());
-            sm.setElement(r, coln++, result.getScore().getNP());
-            sm.setElement(r, coln++, result.getScore().getFDR());
-            sm.setElement(r, coln++, result.getScore().getFWER());
+            sm.setElement(r, coln++, Printf.format(result.getScore().getES(), 2));
+            //sm.setElement(r, coln++, Printf.format(result.getScore().getNES(), 2));
+            sm.setElement(r, coln++, Printf.format(Float.NaN, 2));
+            sm.setElement(r, coln++, Printf.format(result.getScore().getNP(), 3));
+            sm.setElement(r, coln++, Printf.format(result.getScore().getFDR(), 3));
+            sm.setElement(r, coln++, Printf.format(result.getScore().getFWER(), 3));
             sm.setElement(r, coln++, result.getSignal().getRankAtMax());
             sm.setElement(r, coln, getLeadingEdge(result));
 
             if (htmlPage != null) {
-                cell_id_linkMap.put(sm.getElementPos(r, 0), LinkedFactory.createLinkedGeneSet(result.getGeneSet()));
+                if (haveNaN) {
+                    cell_id_colorMap.put(sm.getElementPos(r, 0), "FF0000");
+                    sm.setElement(r, 0, 
+                            "Division by zero or other numeric anomly detected (NaN).<br />"
+                            + "Please visit our <a href=''>Documentation website</a> for more information. <br />"
+                            + "(putatively noted " + gsetNames[r] + " as enriched)");
+                }
+                else {
+                    cell_id_linkMap.put(sm.getElementPos(r, 0), LinkedFactory.createLinkedGeneSet(result.getGeneSet()));
+                }
                 cell_id_linkMap.put(sm.getElementPos(r, 1), new LinkedFactory.SimpleLinkedPage("Details", htmlPage));
             }
         }
 
         StringDataframe sdf = new StringDataframe(dsName + "_basic", sm, gsetNames, BASIC_COL_NAMES, true);
-        TIntIntHashMap colPrecision = new TIntIntHashMap();
-        // TODO: evaluate these settings for report precision consistency
-        colPrecision.put(COL_ES, 2);
-        colPrecision.put(COL_NES, 2);
-        colPrecision.put(COL_NP, 3);
-        colPrecision.put(COL_FDR, 3);
-        colPrecision.put(COL_FWER, 3);
 
         BasicReportStruc struc = new BasicReportStruc();
-        RichDataframe.MetaData md = new RichDataframe.MetaData(title, null, null, null, colPrecision);
-        struc.rdf = new RichDataframe(sdf, md, null, cell_id_linkMap);
+        RichDataframe.MetaData md = new RichDataframe.MetaData(title, null, null, null, null);
+        struc.rdf = new RichDataframe(sdf, md, cell_id_colorMap, cell_id_linkMap);
         struc.reports = (EnrichmentReport[]) ereports.toArray(new EnrichmentReport[ereports.size()]);
         return struc;
     }
-
+    
     public static HtmlPage createSnapshotPage(final boolean pos, final EnrichmentReport[] reports) {
 
         Table table = new Table();
@@ -875,6 +885,7 @@ public class EnrichmentReports extends ChartHelper {
         final float maxmin = esProfile.maxDevFrom0();
         boolean pos = XMath.isPositive(maxmin);
 
+        // TODO: should be able to remove this shortly.
         final TIntIntHashMap colIndexFloatPrecMap = new TIntIntHashMap();
         String[] colNames;
         int symbolIndex;
@@ -920,6 +931,7 @@ public class EnrichmentReports extends ChartHelper {
             final int rank = hitIndices[r];
             final String probeName = rl.getRankName(rank);
             final double metricScore = rl.getScore(rank);
+            Float metricScoreAsFloat = new Float(metricScore);
             final float res = esProfile.getElement(r);
             String desc = null;
             String geneSymbol = null;
@@ -963,8 +975,8 @@ public class EnrichmentReports extends ChartHelper {
             }
 
             //sm.setElement(r, coln++, new Integer(gset.getPosition(probeName)));
-            sm.setElement(r, coln++, new Double(metricScore));
-            sm.setElement(r, coln++, new Float(res));
+            sm.setElement(r, coln++, Printf.format(metricScoreAsFloat, 3));
+            sm.setElement(r, coln++, Printf.format(res, 4));
 
             if ((pos && hitIndices[r] <= maxminIndex) || (!pos && hitIndices[r] >= maxminIndex)) {
                 sm.setElement(r, coln, "Yes");
@@ -975,7 +987,7 @@ public class EnrichmentReports extends ChartHelper {
         }
 
         final StringDataframe sdf = new StringDataframe(name, sm, colNames, true);
-        final RichDataframe.MetaData metaData = new RichDataframe.MetaData("GSEA details", "some caption", null, null, colIndexFloatPrecMap);
+        final RichDataframe.MetaData metaData = new RichDataframe.MetaData("GSEA details", "some caption", null, null, null);
         return new RichDataframe(sdf, metaData, cell_id_colorMap, cell_id_linkMap);
     }
 

@@ -310,6 +310,7 @@ public class HtmlPage implements Page {
                 if (obj != null) {
 
                     String s;
+                    // We'll make this pointless ASAP
                     if (metaData != null) {
                         s = metaData.adjustPrecision(obj, c).toString();
                     } else {

@@ -158,6 +158,7 @@ public class RichDataframe extends AbstractObject implements IDataframe {
      * Internal class representing dataframe wide formating data
      */
     public static class MetaData {
+        private static final String FLOAT_NaN = Float.toString(Float.NaN);
 
         private KeyValTable fKvt;
 
@@ -205,7 +206,10 @@ public class RichDataframe extends AbstractObject implements IDataframe {
         boolean gotNfe = false; // opt so that on one error we stop
 
         public Object adjustPrecision(final Object val, final int coln) {
-            if (val != null && val.toString().length() > 0 && !gotNfe && val != null && fColIndexFloatPrecisionMap != null && fColIndexFloatPrecisionMap.containsKey(coln)) {
+            if (fColIndexFloatPrecisionMap == null) return val;
+            
+            if (val != null && val.toString().length() > 0 && !gotNfe && !FLOAT_NaN.equals(val)
+                    && fColIndexFloatPrecisionMap != null && fColIndexFloatPrecisionMap.containsKey(coln)) {
 
                 try {
                     Float f = new Float(val.toString());

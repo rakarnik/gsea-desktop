@@ -151,6 +151,9 @@ public class Printf {
 
     //TODO: Review uses for consistency in report precision.
     public static String format(final float f, final int precision) {
+        // Report any NaN values explicitly
+        if (Float.isNaN(f)) return "NaN";
+        
         String formatString = new StringBuffer("%.").append(precision).append('f').toString();
         String s = String.format(formatString, f);
         if (s.endsWith(".")) {
