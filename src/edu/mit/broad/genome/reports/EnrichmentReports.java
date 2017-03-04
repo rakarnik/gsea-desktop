@@ -64,6 +64,7 @@ import org.jfree.ui.RectangleEdge;
 import org.jfree.ui.TextAnchor;
 
 import xapps.api.vtools.viewers.VizFactory;
+import xapps.gsea.GseaWebResources;
 
 import java.awt.*;
 import java.awt.Font;
@@ -629,7 +630,7 @@ public class EnrichmentReports extends ChartHelper {
             gsetNames[r] = result.getGeneSet().getName(true);
             HtmlPage htmlPage = null;
             
-            boolean haveNaN = Float.isNaN(result.getScore().getES()) || Float.isNaN(result.getScore().getNES()) || true ||
+            boolean haveNaN = Float.isNaN(result.getScore().getES()) || Float.isNaN(result.getScore().getNES()) ||
                     Float.isNaN(result.getScore().getNP()) || Float.isNaN(result.getScore().getFDR()) || Float.isNaN(result.getScore().getFWER());
             
             sm.setElement(r, coln++, gsetNames[r]);
@@ -643,7 +644,8 @@ public class EnrichmentReports extends ChartHelper {
                         dtg.getGeneSet(), dtg.getScore().getHitIndices(),
                         dtg.getScore().getESProfile(),
                         dtg.getScore().getESProfile_point_by_point_opt(),
-                        result.getScore().getES(), result.getScore().getNES(), result.getScore().getNP(),
+                        result.getScore().getES(), result.getScore().getNES(), 
+                        result.getScore().getNP(),
                         result.getScore().getFDR(), result.getScore().getFWER(), dtg.getRndESS(),
                         htmlPage, fannx, true, createSvgs, createGcts, markers, true, saveDetailFilesInDir);
 
@@ -671,8 +673,7 @@ public class EnrichmentReports extends ChartHelper {
             // TODO: evaluate these settings for report precision consistency
             sm.setElement(r, coln++, result.getScore().getNumHits());
             sm.setElement(r, coln++, Printf.format(result.getScore().getES(), 2));
-            //sm.setElement(r, coln++, Printf.format(result.getScore().getNES(), 2));
-            sm.setElement(r, coln++, Printf.format(Float.NaN, 2));
+            sm.setElement(r, coln++, Printf.format(result.getScore().getNES(), 2));
             sm.setElement(r, coln++, Printf.format(result.getScore().getNP(), 3));
             sm.setElement(r, coln++, Printf.format(result.getScore().getFDR(), 3));
             sm.setElement(r, coln++, Printf.format(result.getScore().getFWER(), 3));
@@ -684,7 +685,8 @@ public class EnrichmentReports extends ChartHelper {
                     cell_id_colorMap.put(sm.getElementPos(r, 0), "FF0000");
                     sm.setElement(r, 0, 
                             "Division by zero or other numeric anomly detected (NaN).<br />"
-                            + "Please visit our <a href=''>Documentation website</a> for more information. <br />"
+                            + "Please visit our <a href='" + GseaWebResources.getGseaHelpURL()
+                            + "'>Documentation website</a> for more information. <br />"
                             + "(putatively noted " + gsetNames[r] + " as enriched)");
                 }
                 else {
