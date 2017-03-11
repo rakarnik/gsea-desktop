@@ -685,7 +685,7 @@ public class EnrichmentReports extends ChartHelper {
             if (haveNaN) {
                 cell_id_colorMap.put(sm.getElementPos(r, 0), "FF0000");
                 sm.setElement(r, 0, 
-                        "Division by zero or other numeric anomly detected (NaN).<br />"
+                        "Division by zero or other numeric anomaly detected (NaN).<br />"
                         + "Please visit our <a href='" + GseaWebResources.getGseaHelpURL()
                         + "'>Documentation website</a> for more information. <br />"
                         + "(putatively noted " + gsetNames[r] + " as enriched)");
