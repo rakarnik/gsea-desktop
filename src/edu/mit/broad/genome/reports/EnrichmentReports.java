@@ -680,16 +680,20 @@ public class EnrichmentReports extends ChartHelper {
             sm.setElement(r, coln++, result.getSignal().getRankAtMax());
             sm.setElement(r, coln, getLeadingEdge(result));
 
+            // If we found an NaN, highlight the result and provide a short info message with a link to the Wiki.
+            // Note that this overrides our usual link to the GSEA website.
+            if (haveNaN) {
+                cell_id_colorMap.put(sm.getElementPos(r, 0), "FF0000");
+                sm.setElement(r, 0, 
+                        "Division by zero or other numeric anomly detected (NaN).<br />"
+                        + "Please visit our <a href='" + GseaWebResources.getGseaHelpURL()
+                        + "'>Documentation website</a> for more information. <br />"
+                        + "(putatively noted " + gsetNames[r] + " as enriched)");
+            }
+            
             if (htmlPage != null) {
-                if (haveNaN) {
-                    cell_id_colorMap.put(sm.getElementPos(r, 0), "FF0000");
-                    sm.setElement(r, 0, 
-                            "Division by zero or other numeric anomly detected (NaN).<br />"
-                            + "Please visit our <a href='" + GseaWebResources.getGseaHelpURL()
-                            + "'>Documentation website</a> for more information. <br />"
-                            + "(putatively noted " + gsetNames[r] + " as enriched)");
-                }
-                else {
+                if (!haveNaN) {
+                    // Add a link to the Gene Set on the website (unless an NaN was found).
                     cell_id_linkMap.put(sm.getElementPos(r, 0), LinkedFactory.createLinkedGeneSet(result.getGeneSet()));
                 }
                 cell_id_linkMap.put(sm.getElementPos(r, 1), new LinkedFactory.SimpleLinkedPage("Details", htmlPage));

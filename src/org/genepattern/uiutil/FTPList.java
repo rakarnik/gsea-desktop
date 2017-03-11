@@ -7,7 +7,10 @@ import com.enterprisedt.net.ftp.FTPConnectMode;
 import com.enterprisedt.net.ftp.FTPException;
 import com.enterprisedt.net.ftp.FileTransferClient;
 
+import edu.mit.broad.vdb.VdbRuntimeResources;
+
 import javax.swing.*;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -48,7 +51,11 @@ public class FTPList extends JList {
             }
 
             for (int i = 0, length = fFileNames.length; i < length; i++) {
-                model.addElement(new org.genepattern.uiutil.FTPFile(host, dir, fFileNames[i]));
+                String filename = fFileNames[i];
+                // Skip putting GENE_SYMBOL and SEQ_ACCESSION entries into the list so they are not selectable.
+                if (!VdbRuntimeResources.isChipGeneSymbol(filename) && !VdbRuntimeResources.isChipSeqAccession(filename)) {
+                    model.addElement(new org.genepattern.uiutil.FTPFile(host, dir, filename));
+                }
             }
         }
         setModel(model);
