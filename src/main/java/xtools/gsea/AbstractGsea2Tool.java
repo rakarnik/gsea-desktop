@@ -6,6 +6,7 @@ package xtools.gsea;
 import edu.mit.broad.genome.Headers;
 import edu.mit.broad.genome.alg.DatasetGenerators;
 import edu.mit.broad.genome.alg.Metric;
+import edu.mit.broad.genome.alg.Metrics;
 import edu.mit.broad.genome.alg.gsea.KSTests;
 import edu.mit.broad.genome.math.*;
 import edu.mit.broad.genome.objects.GeneSet;
@@ -34,9 +35,20 @@ import org.apache.commons.lang3.StringUtils;
 
 /**
  * @author Aravind Subramanian
- * @version %I%, %G%
  */
 public abstract class AbstractGsea2Tool extends AbstractGseaTool {
+    
+    // TODO: Consolidate param enums elsewhere
+    public enum MuAndSigmaAdjust {
+        CORRECTED, ORIGINAL, NONE;
+        
+        public static MuAndSigmaAdjust byName(String name) {
+            if ("corrected".equalsIgnoreCase(name)) return CORRECTED;
+            if ("none".equalsIgnoreCase(name)) return NONE;
+            if ("original".equalsIgnoreCase(name)) return ORIGINAL;
+            throw new IllegalArgumentException("No MuAndSigmaAdjust with name " + name);
+        }
+    }
 
     protected final DatasetReqdParam fDatasetParam = new DatasetReqdParam();
 
@@ -52,16 +64,14 @@ public abstract class AbstractGsea2Tool extends AbstractGseaTool {
 
     protected final BooleanParam fSaveRndRankedListsParam = new BooleanParam("save_rnd_lists", "Save random ranked lists", "Save random ranked lists (might be very large)", false, false);
 
+    private final StringReqdParam fMuSigmaAdjustParam = new StringReqdParam("muSigmaAdjust", "Mu and Sigma Adjustment", 
+            "Mu and Sigma adjustment to apply for Signal2Noise and tTest", new String[] { "corrected", "none", "original" });
+
     protected final TemplateRandomizerTypeParam fRndTypeParam = new TemplateRandomizerTypeParam(
             TemplateRandomizerType.NO_BALANCE,
             new TemplateRandomizerType[]{TemplateRandomizerType.NO_BALANCE,
                     TemplateRandomizerType.EQUALIZE_AND_BALANCE}, true);
 
-    /**
-     * Class constructor
-     *
-     * @param properties
-     */
     protected AbstractGsea2Tool(String defCollapseMode) {
         super(defCollapseMode);
     }
@@ -77,6 +87,7 @@ public abstract class AbstractGsea2Tool extends AbstractGseaTool {
         fParamSet.addParamAdv(fNumMarkersParam);
         fParamSet.addParamAdv(fSaveRndRankedListsParam);
         fParamSet.addParamAdv(fRndTypeParam);
+        fParamSet.addParamAdv(fMuSigmaAdjustParam);
     }
 
     private EnrichmentDb execute_one(final CollapsedDetails.Data fullCd,
@@ -96,11 +107,10 @@ public abstract class AbstractGsea2Tool extends AbstractGseaTool {
         }
 
         return tests.executeGsea(dt, gsets, fNumPermParam.getIValue(), fMetricParam.getMetric(),
-        		fSortParam.getMode(), fOrderParam.getOrder(), rst,
-                fRndTypeParam.getRandomizerType(), getMetricParams(fMedianParam),
-                fGcohGenReqdParam.createGeneSetCohortGenerator(), fPermuteTypeParamType.permuteTemplate(),
-                fNumMarkersParam.getIValue(), store_rnd_ranked_lists_here_opt);
-
+        		fSortParam.getMode(), fOrderParam.getOrder(), rst, fRndTypeParam.getRandomizerType(), 
+        		getMetricParams(), fGcohGenReqdParam.createGeneSetCohortGenerator(), 
+        		fPermuteTypeParamType.permuteTemplate(), fNumMarkersParam.getIValue(), 
+        		store_rnd_ranked_lists_here_opt); 
     }
 
     protected void execute_one_with_reporting(final CollapsedDetails.Data fullCd, final Template template, 
@@ -162,12 +172,25 @@ public abstract class AbstractGsea2Tool extends AbstractGseaTool {
     }
 
     // result hack to allow setting mean / median
-    public Map<String, Boolean> getMetricParams(BooleanParam medianParam) {
+    public Map<String, Boolean> getMetricParams() {
         Map<String, Boolean> params = new HashMap<String, Boolean>();
         params.put(Headers.USE_MEDIAN, XPreferencesFactory.kMedian.getBooleanO());
         params.put(Headers.FIX_LOW, XPreferencesFactory.kFixLowVar.getBooleanO());
         params.put(Headers.USE_BIASED, XPreferencesFactory.kBiasedVar.getBooleanO());
-        params.put(Headers.USE_MEDIAN, (Boolean)medianParam.getValue());
+        params.put(Headers.USE_MEDIAN, (Boolean)fMedianParam.getValue());
+
+        // Special settings for Mu And Sigma adjustment.  Only applies for the S2N & t-Test metrics
+        Metric metric = fMetricParam.getMetric();
+        if (Metrics.Signal2Noise.NAME.equals(metric.getName()) || 
+                Metrics.tTest.NAME.equals(metric.getName())) {
+            MuAndSigmaAdjust adjust = MuAndSigmaAdjust.byName(fMuSigmaAdjustParam.getString());
+            if (adjust == MuAndSigmaAdjust.NONE) {
+                params.put(Headers.FIX_LOW, false);
+                params.put("corrected", false);
+            } else {
+                params.put("corrected", (adjust == MuAndSigmaAdjust.CORRECTED));
+            }
+        }
         return Collections.unmodifiableMap(params);
     }
 }

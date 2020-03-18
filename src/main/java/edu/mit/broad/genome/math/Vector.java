@@ -506,6 +506,51 @@ public class Vector {
         return computeset.stddev;
     }
 
+    /**
+     * @return The std aa_indev of vector
+     *         // Some heuristics for adjusting variance based on data from affy chips
+     *         // NOTE: problem occurs when we threshold to a value, then that artificially
+     *         //   reduces the variance in the data
+     *         /
+     *         // First, we make the variance at least a fixed percent of the mean
+     *         // If the mean is too small, then we use an absolute variance
+     *         /
+     *         // However, we don't want to bias our algs for affy data, e.g. we may
+     *         // get data in 0..1 and in that case it is not appropriate to use
+     *         // an absolute standard deviation of 10 - will kill the signal.
+     *         /
+     */
+    public double stddev(boolean biased, boolean fixlow, boolean useCorrected) {
+
+        double stddev = Math.sqrt(_var(biased));    // @note call to _var and not var
+        double mean = computeset.mean;                    // avoid recalc
+
+        if (fixlow) {
+            if (useCorrected) {
+              double minallowed = XMath.isNearlyZero(mean) ? 0.20 : (0.20 * Math.abs(mean));
+              stddev = Math.max(stddev, minallowed);
+                
+            } else {
+              // Otherwise, use the original adjustment code with faulty FP logic  
+              double minallowed = (0.20 * Math.abs(mean));
+    
+              // In the case of a zero mean, assume the mean is 1
+              if (minallowed == 0) {
+                  minallowed = 0.20;
+              }
+    
+              if (minallowed < stddev) {
+                  // keep orig
+              } else {
+                  stddev = minallowed;
+              }
+            }
+        }
+        computeset.stddev = stddev;
+
+        return computeset.stddev;
+    }
+
     // Specialized versions.
     public double stddevBiasedFixLow() {
         double stddev = Math.sqrt(_varBiased()); // @note call to _var and not var

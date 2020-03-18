@@ -373,6 +373,7 @@ public class Metrics {
             boolean usebiased = AlgMap.isBiased(params);
             boolean fixlow = AlgMap.isFixLowVar(params);
             boolean usemedian = AlgMap.isMedian(params);
+            boolean useCorrected = params.get("corrected");
 
             Vector[] vs = fSplitter.splitBiphasic_nansafe(profile, template);
 
@@ -384,10 +385,10 @@ public class Metrics {
 
                 if (coiIndex == 0) {
                     return //s2n.apply(vs[0], vs[1]);
-                            XMath.s2n(vs[0], vs[1], usebiased, usemedian, fixlow);
+                            XMath.s2n(vs[0], vs[1], usebiased, usemedian, fixlow, useCorrected);
                 } else {
                     return //s2n.apply(vs[1], vs[0]);
-                            XMath.s2n(vs[1], vs[0], usebiased, usemedian, fixlow);
+                            XMath.s2n(vs[1], vs[0], usebiased, usemedian, fixlow, useCorrected);
                 }
             }
 

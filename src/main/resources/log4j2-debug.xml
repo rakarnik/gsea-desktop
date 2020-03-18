@@ -10,10 +10,10 @@
 <Configuration>
   <Appenders>
     <Console name="stdout" target="SYSTEM_OUT">
-      <PatternLayout pattern="%-8r [%-6p] - %m%n"/>
+      <PatternLayout pattern="%-8r [%-6p] [%C:%L] %m%n"/>
     </Console>
     <File name="FileLog" fileName="logs/gsea.log">
-      <PatternLayout pattern="%-8r [%-6p] - %m%n"/>
+      <PatternLayout pattern="%-8r [%-6p] [%c:%L] %m%n"/>
     </File>
   </Appenders>
   <Loggers>
